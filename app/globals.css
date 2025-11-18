@@ -5,6 +5,11 @@
   --foreground: #171717;
 }
 
+[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -13,9 +18,49 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme-mode="light"]) {
     --background: #0a0a0a;
     --foreground: #ededed;
+  }
+
+  :root:not([data-theme-mode="light"]) body {
+    background: radial-gradient(circle at top, #12121f, #05050b);
+    color: var(--foreground);
+  }
+
+  :root:not([data-theme-mode="light"]) .bg-white {
+    background-color: #111827 !important;
+  }
+
+  :root:not([data-theme-mode="light"]) .bg-zinc-50 {
+    background-color: #090b16 !important;
+  }
+
+  :root:not([data-theme-mode="light"]) .border-zinc-200 {
+    border-color: #1f2937 !important;
+  }
+
+  :root:not([data-theme-mode="light"]) .border-zinc-300 {
+    border-color: #374151 !important;
+  }
+
+  :root:not([data-theme-mode="light"]) .text-zinc-900,
+  :root:not([data-theme-mode="light"]) .text-black {
+    color: #f8fafc !important;
+  }
+
+  :root:not([data-theme-mode="light"]) .text-zinc-700,
+  :root:not([data-theme-mode="light"]) .text-zinc-600 {
+    color: #e2e8f0 !important;
+  }
+
+  :root:not([data-theme-mode="light"]) .text-zinc-500,
+  :root:not([data-theme-mode="light"]) .text-zinc-400 {
+    color: #cbd5f5 !important;
+  }
+
+  :root:not([data-theme-mode="light"]) .bg-gradient-to-b {
+    background-image: linear-gradient(180deg, #0b0b13, #05060c) !important;
   }
 }
 
@@ -23,4 +68,49 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.8);
+  color: #0f172a;
+  font-size: 0.85rem;
+  backdrop-filter: blur(8px);
+}
+
+.theme-toggle__button {
+  appearance: none;
+  border: none;
+  padding: 0.25rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+}
+
+.theme-toggle__button.is-active {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+@media (prefers-color-scheme: dark) {
+  .theme-toggle {
+    background: rgba(15, 23, 42, 0.8);
+    color: #e2e8f0;
+  }
+
+  .theme-toggle__button.is-active {
+    background: #f8fafc;
+    color: #111827;
+  }
 }

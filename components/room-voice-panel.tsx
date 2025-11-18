@@ -44,6 +44,21 @@ export function RoomVoicePanel({ status }: Props) {
     }
     try {
       await meeting.self.disableAudio?.();
+      const audioPublication = (meeting.self as {
+        rawAudioTrack?: MediaStreamTrack;
+        audioTrack?: { track?: MediaStreamTrack; mediaStreamTrack?: MediaStreamTrack };
+      });
+      const rawTrack =
+        audioPublication.rawAudioTrack ??
+        audioPublication.audioTrack?.track ??
+        audioPublication.audioTrack?.mediaStreamTrack;
+      if (rawTrack && rawTrack.readyState !== "ended") {
+        try {
+          rawTrack.stop();
+        } catch (err) {
+          console.warn("Failed to stop audio track", err);
+        }
+      }
     } catch (err) {
       console.warn("disable audio error", err);
     } finally {

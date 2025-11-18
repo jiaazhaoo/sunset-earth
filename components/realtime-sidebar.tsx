@@ -138,7 +138,18 @@ function SidebarContent({
         <>
           <div className="rounded-2xl border border-zinc-200 bg-white p-0 shadow-sm">
             <div className="h-[420px] min-h-[420px]">
-              <RtkChat meeting={meeting} />
+              <RtkChat
+                meeting={meeting}
+                style={{
+                  "--rtk-color-background-base": "#ffffff",
+                  "--rtk-color-background-elevated": "#f8f9fb",
+                  "--rtk-color-border": "#e4e4e7",
+                  "--rtk-color-text-primary": "#0f172a",
+                  "--rtk-color-text-secondary": "#475569",
+                  "--rtk-color-surface": "#ffffff",
+                  "--rtk-color-muted": "#f4f4f5",
+                }}
+              />
             </div>
           </div>
           <div className="sr-only">

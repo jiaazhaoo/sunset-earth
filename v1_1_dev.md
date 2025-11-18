@@ -53,7 +53,9 @@ create index if not exists rooms_camera_id_idx on public.rooms (camera_id);
 | 9. 分享功能 | Room 页顶部引入 `ShareRoomLink`（复制链接 + 分享到 X），自动根据请求 Host/协议生成分享 URL |
 | 10. Headers Promise 适配 | `headers()` 在 Next.js 16 中也是 Promise，需要 `await headers()` 再调用 `.get()`，已在 room 页面修复 |
 | 11. 语音 & 聊天（Cloudflare Realtime） | `.env` 需 `CLOUDFLARE_BASIC_AUTH`（整段 Basic 头）+ `CLOUDFLARE_REALTIME_PRESET`；`lib/cloudflareRealtime.ts` 调用 `https://api.realtime.cloudflare.com/v2` 创建 meeting/participant，React 端通过 `RealtimeSidebar` 统一拉起会议，`RoomVoicePanel` 控制语音，`RtkChat` 提供聊天 UI |
-| 12. TODO | Presence（在线人数）与消息存储、历史回放 |
+| 12. 浏览器提醒优化 | `RoomVoicePanel` 退出语音时除 `disableAudio()` 外，会 `stop()` 掉当前 `rawAudioTrack`，退出后浏览器不再提示占用麦克风 |
+| 13. 主题切换 & UI 统一 | 页面新增 `ThemeToggle`，可在亮/暗/跟随之间手动切换；`RtkChat` 自定义了浅色主题变量，暗色模式下亦可保持统一风格 |
+| 14. TODO | Presence（在线人数）与消息存储、历史回放 |
 
 ### Cloudflare RealtimeKit 集成备忘（语音 + 聊天）
 
@@ -66,4 +68,4 @@ create index if not exists rooms_camera_id_idx on public.rooms (camera_id);
 3. `/api/create-room` 在写入 Supabase 前先创建 Cloudflare meeting 并存到 `voice_meeting_id`；`/api/realtime-token` 会在旧房间缺字段时自动补建。
 4. 前端 `RealtimeSidebar` 使用 `@cloudflare/realtimekit-react` 的 `useRealtimeKitClient` 创建会议实例，`RealtimeKitProvider` 将 meeting 传递给 `RoomVoicePanel` 和 `RtkChat`。
 5. 聊天 UI 通过 `@cloudflare/realtimekit-react-ui` 的 `RtkChat` 实现，配套挂载 `RtkParticipantsAudio`、`RtkNotifications`、`RtkDialogManager` 以获得完整体验。
-6. 语音仍由 `RoomVoicePanel` 控制 `meeting.self.enableAudio()` / `disableAudio()`，按钮状态由 Realtime 连接状态驱动。
+6. 语音仍由 `RoomVoicePanel` 控制 `meeting.self.enableAudio()` / `disableAudio()`，并在退出时 `stop()` 麦克风 Track，按钮状态由 Realtime 连接状态驱动。
