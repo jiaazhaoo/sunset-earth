@@ -55,7 +55,7 @@ export function RoomVoicePanel({ status }: Props) {
   const pillClass =
     voiceStatus === "joined"
       ? "bg-green-100 text-green-700"
-      : voiceStatus === "joining" || status === "connecting"
+      : voiceStatus === "joining"
       ? "bg-amber-100 text-amber-700"
       : voiceStatus === "error" || status === "error"
       ? "bg-red-100 text-red-600"
@@ -64,7 +64,7 @@ export function RoomVoicePanel({ status }: Props) {
   const label =
     voiceStatus === "joined"
       ? "已加入"
-      : voiceStatus === "joining" || status === "connecting"
+      : voiceStatus === "joining"
       ? "连接中"
       : voiceStatus === "error" || status === "error"
       ? "失败"
@@ -99,12 +99,10 @@ export function RoomVoicePanel({ status }: Props) {
         ) : (
           <button
             onClick={handleJoin}
-            disabled={!canJoin || status === "connecting" || voiceStatus === "joining"}
+            disabled={!canJoin || voiceStatus === "joining"}
             className="flex-1 rounded-full bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-500"
           >
-            {status === "connecting" || voiceStatus === "joining"
-              ? "连接中…"
-              : "加入语音"}
+            {voiceStatus === "joining" ? "连接中…" : "加入语音"}
           </button>
         )}
       </div>

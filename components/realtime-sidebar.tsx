@@ -131,27 +131,27 @@ function SidebarContent({
     );
   }
 
-  if (!meeting || status !== "connected") {
-    return (
-      <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-6 text-sm text-zinc-500">
-        正在连接实时会议...
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <RoomVoicePanel status={status} />
-      <div className="rounded-2xl border border-zinc-200 bg-white p-0 shadow-sm">
-        <div className="h-[420px] min-h-[420px]">
-          <RtkChat meeting={meeting} />
+      {meeting && status === "connected" ? (
+        <>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-0 shadow-sm">
+            <div className="h-[420px] min-h-[420px]">
+              <RtkChat meeting={meeting} />
+            </div>
+          </div>
+          <div className="sr-only">
+            <RtkParticipantsAudio meeting={meeting} />
+            <RtkNotifications meeting={meeting} />
+            <RtkDialogManager meeting={meeting} />
+          </div>
+        </>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-6 text-sm text-zinc-500">
+          正在连接实时会议...
         </div>
-      </div>
-      <div className="sr-only">
-        <RtkParticipantsAudio meeting={meeting} />
-        <RtkNotifications meeting={meeting} />
-        <RtkDialogManager meeting={meeting} />
-      </div>
+      )}
     </div>
   );
 }
