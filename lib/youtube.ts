@@ -115,10 +115,12 @@ function findLiveRenderer(raw: unknown) {
         (block as { richGridRenderer?: { contents?: YoutubeNode[] } })
           ?.richGridRenderer?.contents ??
         [];
-      for (const item of items) {
+      for (const item of items as YoutubeNode[]) {
         const renderer =
-          item?.videoRenderer ??
-          item?.richItemRenderer?.content?.videoRenderer ??
+          (item as { videoRenderer?: YoutubeNode }).videoRenderer ??
+          (item as {
+            richItemRenderer?: { content?: { videoRenderer?: YoutubeNode } };
+          }).richItemRenderer?.content?.videoRenderer ??
           null;
         if (!renderer) continue;
         const overlays: YoutubeNode[] = renderer.thumbnailOverlays ?? [];
