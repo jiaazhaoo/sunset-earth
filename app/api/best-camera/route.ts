@@ -3,7 +3,6 @@ import {
   getCameraById,
   getRandomCamera,
   listCameras,
-  type CameraRecord,
 } from "@/lib/cameras";
 import { fetchWeatherSnapshot, scoreCameraWeather } from "@/lib/weather";
 import { isCameraAvailable } from "@/lib/availability";
@@ -105,17 +104,7 @@ async function findBestCamera(exclude: Set<string>) {
   );
 
   const scored = candidates
-    .filter(
-      (entry): entry is {
-        camera: CameraRecord;
-        evaluation: ReturnType<typeof scoreCameraWeather>;
-        weatherSnapshot: {
-          sunrise: string | undefined;
-          sunset: string | undefined;
-          timezone: string | undefined;
-        };
-      } => entry !== null
-    )
+    .filter((entry): entry is typeof entry => entry !== null)
     .sort((a, b) => {
       if (b.evaluation.score !== a.evaluation.score) {
         return b.evaluation.score - a.evaluation.score;
