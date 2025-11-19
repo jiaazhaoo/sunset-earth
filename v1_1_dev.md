@@ -8,8 +8,8 @@
 | ------------------ | ------------- | ------------------- | ---- |
 | `room_id`          | `uuid`        | `gen_random_uuid()` | 房间唯一 ID（URL 使用 `/room/{room_id}`） |
 | `camera_id`        | `text`        | —                   | 对应 `camera_ytb.camera_id`；房间创建时记录所选摄像头 |
-| `room_created_at`  | `timestamptz` | `now()`             | 房间创建时间，使用 `timestamptz` 自动保存 UTC 并可换算任意时区 |
-| `room_last_time`   | `timestamptz` | `now()`             | 最近活跃时间，后续进入房间/聊天时更新，用于清理长期空房 |
+| `room_start_time`  | `timestamptz` | `now()`             | 房间创建时间，使用 `timestamptz` 自动保存 UTC 并可换算任意时区 |
+| `room_end_time`    | `timestamptz` | `now()`             | 最近活跃时间，后续进入房间/聊天时更新，用于清理长期空房 |
 | `room_timezone`    | `text`        | —                   | 记录房间参考的时区，推荐写摄像头所在时区（IANA 名称，如 `America/Los_Angeles`） |
 | `room_type`        | `text`        | `'public'`          | 房间类型，预留值：`public`（全民可见）、`private`（需分享链接）；后续可改为 enum |
 | `voice_meeting_id` | `text`        | —                   | Cloudflare RealtimeKit Meeting ID，对应语音/聊天所用会议；在 Cloudflare 上创建后写入 |
@@ -22,8 +22,8 @@
 create table if not exists public.rooms (
   room_id uuid primary key default gen_random_uuid(),
   camera_id text not null,
-  room_created_at timestamptz not null default now(),
-  room_last_time timestamptz not null default now(),
+  room_start_time timestamptz not null default now(),
+  room_end_time timestamptz not null default now(),
   room_timezone text,
   room_type text not null default 'public',
   voice_meeting_id text
@@ -32,7 +32,7 @@ create table if not exists public.rooms (
 create index if not exists rooms_camera_id_idx on public.rooms (camera_id);
 ```
 
-如需在应用里更新 `room_last_time`，后续可以通过 `rpc` 或简单的 `update` API 完成。`room_type` 目前保持文本字段，方便快速迭代，未来也可以迁移为 `enum`.
+如需在应用里更新 `room_end_time`，后续可以通过 `rpc` 或简单的 `update` API 完成。`room_type` 目前保持文本字段，方便快速迭代，未来也可以迁移为 `enum`.
 
 > 已经创建的旧表，可执行 `alter table public.rooms add column if not exists voice_meeting_id text;` 来补齐列。
 
@@ -43,7 +43,7 @@ create index if not exists rooms_camera_id_idx on public.rooms (camera_id);
 | 时间/节点 | 内容 |
 | -------- | ---- |
 | 1. Supabase 摄像头 → Next.js | `lib/cameras.ts` 封装 Supabase 查询，`/api/cameras` 和 `/api/best-camera` 接口打通，主页 iframe 可随机切换摄像头 |
-| 2. Rooms 表建模 | 采用 `room_id/camera_id/room_created_at/room_last_time/room_timezone/room_type` 字段，全部使用 `timestamptz`，文档即本页所述 |
+| 2. Rooms 表建模 | 采用 `room_id/camera_id/room_start_time/room_end_time/room_timezone/room_type` 字段，全部使用 `timestamptz`，文档即本页所述 |
 | 3. Rooms API helper | `lib/rooms.ts` 新增 `createRoom` 封装，统一插入字段/默认值，API Route 可以直接调用 |
 | 4. `/api/create-room` | `POST /api/create-room` 接收 `cameraId/timezone` 并调用 `createRoom`，返回 `{ roomId }`，供首页跳转 |
 | 5. Home 按钮联动 | `CameraViewer` 中增加房间创建按钮，调用 API 后跳转 `/room/{roomId}?camera={cameraId}`；loading/error 状态已实现 |

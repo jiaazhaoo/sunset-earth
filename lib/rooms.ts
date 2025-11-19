@@ -4,8 +4,8 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 export type RoomRecord = {
   room_id: string;
   camera_id: string;
-  room_created_at: string;
-  room_last_time: string;
+  room_start_time: string;
+  room_end_time: string;
   room_timezone: string | null;
   room_type: string;
   voice_meeting_id: string | null;
@@ -30,7 +30,7 @@ export async function createRoom(params: {
     .from("rooms")
     .insert(payload)
     .select(
-      "room_id,camera_id,room_created_at,room_last_time,room_timezone,room_type,voice_meeting_id"
+      "room_id,camera_id,room_start_time,room_end_time,room_timezone,room_type,voice_meeting_id"
     )
     .single();
 
@@ -45,7 +45,7 @@ export async function getRoom(roomId: string) {
   const { data, error } = await supabaseAdmin
     .from("rooms")
     .select(
-      "room_id,camera_id,room_created_at,room_last_time,room_timezone,room_type,voice_meeting_id"
+      "room_id,camera_id,room_start_time,room_end_time,room_timezone,room_type,voice_meeting_id"
     )
     .eq("room_id", roomId)
     .maybeSingle();
@@ -90,14 +90,14 @@ export async function listRoomsWithMeetings(options?: {
   const query = supabaseAdmin
     .from("rooms")
     .select(
-      "room_id,camera_id,room_created_at,room_last_time,room_timezone,room_type,voice_meeting_id"
+      "room_id,camera_id,room_start_time,room_end_time,room_timezone,room_type,voice_meeting_id"
     )
     .not("voice_meeting_id", "is", null)
-    .order("room_created_at", { ascending: true })
+    .order("room_start_time", { ascending: true })
     .limit(limit);
 
   if (options?.olderThan) {
-    query.lt("room_created_at", options.olderThan.toISOString());
+    query.lt("room_start_time", options.olderThan.toISOString());
   }
 
   const { data, error } = await query;
