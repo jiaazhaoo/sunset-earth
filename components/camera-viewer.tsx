@@ -208,6 +208,9 @@ export function CameraViewer({ initialCamera }: Props) {
       if (payload.camera) {
         setCamera(payload.camera);
         setBlacklist((prev) => prev.filter((id) => id !== cam.id));
+        if (cam.id) {
+          updateAvailability(cam.id, true).catch(() => undefined);
+        }
         return true;
       }
     } catch (err) {
@@ -229,6 +232,7 @@ export function CameraViewer({ initialCamera }: Props) {
       setBlacklist((prev) =>
         prev.includes(camera.id) ? prev : [...prev, camera.id]
       );
+      updateAvailability(camera.id, false).catch(() => undefined);
     }
     handleSwitch().catch(() => undefined);
   };
@@ -338,4 +342,15 @@ function CameraActions({
       )}
     </div>
   );
+}
+async function updateAvailability(cameraId: string, available: boolean) {
+  try {
+    await fetch("/api/camera-availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cameraId, available }),
+    });
+  } catch (error) {
+    console.warn("update availability failed", error);
+  }
 }

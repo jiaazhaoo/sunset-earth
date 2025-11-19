@@ -57,6 +57,10 @@ async function findBestCamera(exclude: Set<string>) {
         return null;
       }
 
+      if (camera.linkAvailable === false) {
+        return null;
+      }
+
       const playable = await isCameraAvailable(camera);
       if (!playable) {
         return null;

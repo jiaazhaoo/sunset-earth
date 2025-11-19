@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const CAMERA_COLUMNS =
-  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title";
+  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available";
 
 export type CameraRow = {
   camera_id: number | string;
@@ -16,6 +16,7 @@ export type CameraRow = {
   tag: string | null;
   host_link: string | null;
   ytb_title: string | null;
+  link_available: boolean | null;
 };
 
 export type CameraRecord = {
@@ -31,6 +32,7 @@ export type CameraRecord = {
   tags: string[];
   hostLink: string | null;
   ytbTitle: string | null;
+  linkAvailable: boolean;
 };
 
 export async function listCameras(limit = 200) {
@@ -88,6 +90,7 @@ function mapCameraRow(row: CameraRow): CameraRecord {
     tags: parseTags(row.tag),
     hostLink: row.host_link ?? null,
     ytbTitle: row.ytb_title ?? null,
+    linkAvailable: row.link_available ?? true,
   };
 }
 
