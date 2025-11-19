@@ -21,6 +21,23 @@ export default async function RoomPage({
   if (!room) {
     notFound();
   }
+  if (room.is_close) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
+        <div className="rounded-3xl border border-zinc-200 bg-white px-8 py-10 text-center shadow-lg">
+          <p className="text-sm uppercase tracking-[0.3em] text-orange-500">
+            Room Closed
+          </p>
+          <h1 className="mt-4 text-3xl font-semibold text-zinc-900">
+            日落已经结束
+          </h1>
+          <p className="mt-2 text-base text-zinc-600">
+            这个房间已关闭，请重新在首页创建新的「好友一起看」房间。
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const cameraId = resolvedSearchParams.camera ?? room.camera_id;
   const camera = cameraId ? await getCameraById(cameraId) : null;

@@ -1,5 +1,5 @@
 import { listMeetingParticipants } from "@/lib/cloudflareRealtime";
-import { deleteRoom, listRoomsWithMeetings } from "@/lib/rooms";
+import { closeRoom, listRoomsWithMeetings } from "@/lib/rooms";
 
 type CleanupOptions = {
   limit?: number;
@@ -7,7 +7,7 @@ type CleanupOptions = {
 };
 
 export async function cleanupEmptyRooms(options?: CleanupOptions) {
-  const minAgeMinutes = options?.minRoomAgeMinutes ?? 10;
+  const minAgeMinutes = options?.minRoomAgeMinutes ?? 15;
   const limit = options?.limit ?? 200;
   const olderThan = new Date(Date.now() - minAgeMinutes * 60 * 1000);
 
@@ -31,7 +31,7 @@ export async function cleanupEmptyRooms(options?: CleanupOptions) {
     try {
       const participants = await listMeetingParticipants(room.voice_meeting_id);
       if (participants.length === 0) {
-        await deleteRoom(room.room_id);
+        await closeRoom(room.room_id);
         summary.closed++;
       } else {
         summary.skipped++;
