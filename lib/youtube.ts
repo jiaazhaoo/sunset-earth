@@ -82,10 +82,17 @@ type YoutubeNode = Record<string, unknown>;
 
 function findLiveRenderer(raw: unknown) {
   try {
-    const data = raw as YoutubeNode;
+    if (
+      typeof raw !== "object" ||
+      raw === null ||
+      !("contents" in raw)
+    ) {
+      return null;
+    }
+    const data = raw as { contents?: YoutubeNode };
     const contents =
-      data?.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer
-        ?.content?.sectionListRenderer?.contents;
+      (data.contents as YoutubeNode | undefined)?.twoColumnBrowseResultsRenderer
+        ?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents;
     if (!Array.isArray(contents)) {
       return null;
     }
