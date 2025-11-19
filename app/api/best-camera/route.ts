@@ -124,7 +124,7 @@ async function findBestCamera(exclude: Set<string>) {
   }
 
   const candidate = scored.find(
-    (entry) => !exclude.has(entry.camera.id)
+    (entry) => entry && !exclude.has(entry.camera.id)
   );
 
   if (candidate) {
