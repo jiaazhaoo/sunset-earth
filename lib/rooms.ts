@@ -70,3 +70,41 @@ export async function updateRoomVoiceMeeting(
     throw new Error(error.message);
   }
 }
+
+export async function deleteRoom(roomId: string) {
+  const { error } = await supabaseAdmin
+    .from("rooms")
+    .delete()
+    .eq("room_id", roomId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function listRoomsWithMeetings(options?: {
+  limit?: number;
+  olderThan?: Date;
+}) {
+  const limit = options?.limit ?? 200;
+  const query = supabaseAdmin
+    .from("rooms")
+    .select(
+      "room_id,camera_id,room_created_at,room_last_time,room_timezone,room_type,voice_meeting_id"
+    )
+    .not("voice_meeting_id", "is", null)
+    .order("room_created_at", { ascending: true })
+    .limit(limit);
+
+  if (options?.olderThan) {
+    query.lt("room_created_at", options.olderThan.toISOString());
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as RoomRecord[]) ?? [];
+}

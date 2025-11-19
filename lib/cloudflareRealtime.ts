@@ -100,3 +100,20 @@ export async function createParticipantToken(options: {
 
   return data.token;
 }
+
+export type MeetingParticipant = {
+  id: string;
+  name?: string;
+  custom_participant_id?: string;
+  preset_name?: string;
+};
+
+export async function listMeetingParticipants(meetingId: string) {
+  const data = await callCloudflare<MeetingParticipant[]>(
+    `/meetings/${meetingId}/participants`
+  );
+  if (!Array.isArray(data)) {
+    return [];
+  }
+  return data;
+}

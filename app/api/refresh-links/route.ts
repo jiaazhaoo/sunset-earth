@@ -3,6 +3,7 @@ import { listCameras } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
 import { refreshCamera } from "@/lib/cameraRefresh";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { cleanupEmptyRooms } from "@/lib/roomCleanup";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -57,7 +58,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(summary);
+    const roomsCleanup = await cleanupEmptyRooms();
+
+    return NextResponse.json({
+      ...summary,
+      roomsCleanup,
+    });
   } catch (error) {
     console.error("[refresh-links]", error);
     return NextResponse.json(
