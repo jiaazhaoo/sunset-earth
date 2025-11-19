@@ -109,7 +109,11 @@ async function findBestCamera(exclude: Set<string>) {
       (entry): entry is {
         camera: CameraRecord;
         evaluation: ReturnType<typeof scoreCameraWeather>;
-        weatherSnapshot: Record<string, unknown>;
+        weatherSnapshot: {
+          sunrise: string | undefined;
+          sunset: string | undefined;
+          timezone: string | undefined;
+        };
       } => entry !== null
     )
     .sort((a, b) => {
