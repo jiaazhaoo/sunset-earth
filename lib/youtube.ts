@@ -6,6 +6,18 @@ export type LiveVideoInfo = {
   title: string;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function asRecordArray(value: unknown) {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
 export async function fetchChannelLiveVideo(
   channelUrl: string
 ): Promise<LiveVideoInfo | null> {
@@ -49,12 +61,9 @@ export async function fetchChannelLiveVideo(
 
   const initialData = extractJson(html, "ytInitialData");
   if (initialData) {
-    const liveCard = findLiveRenderer(initialData);
-    if (liveCard?.videoId) {
-      return {
-        videoId: liveCard.videoId,
-        title: liveCard.title ?? "",
-      };
+    const liveVideo = findLiveRenderer(initialData);
+    if (liveVideo) {
+      return liveVideo;
     }
   }
 
@@ -80,84 +89,134 @@ function extractJson(html: string, key: string) {
 
 type YoutubeNode = Record<string, unknown>;
 
-function findLiveRenderer(raw: unknown) {
+function findLiveRenderer(raw: unknown): LiveVideoInfo | null {
   try {
-    if (
-      typeof raw !== "object" ||
-      raw === null ||
-      !("contents" in raw)
-    ) {
+    const sectionBlocks = getSectionBlocks(raw);
+    if (!sectionBlocks.length) {
       return null;
     }
-    const data = raw as {
-      contents?: {
-        twoColumnBrowseResultsRenderer?: {
-          tabs?: Array<{
-            tabRenderer?: {
-              content?: {
-                sectionListRenderer?: { contents?: YoutubeNode[] };
-              };
-            };
-          }>;
-        };
-      };
-    };
-    const contents =
-      data.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer
-        ?.content?.sectionListRenderer?.contents;
-    if (!Array.isArray(contents)) {
-      return null;
-    }
-    for (const block of contents as YoutubeNode[]) {
-      const items =
-        (block as { itemSectionRenderer?: { contents?: YoutubeNode[] } })
-          ?.itemSectionRenderer?.contents ??
-        (block as { richGridRenderer?: { contents?: YoutubeNode[] } })
-          ?.richGridRenderer?.contents ??
-        [];
-      for (const item of items as YoutubeNode[]) {
-        const renderer =
-          (item as { videoRenderer?: YoutubeNode }).videoRenderer ??
-          (item as {
-            richItemRenderer?: { content?: { videoRenderer?: YoutubeNode } };
-          }).richItemRenderer?.content?.videoRenderer ??
-          null;
-        if (
-          !renderer ||
-          typeof renderer.videoId !== "string" ||
-          typeof renderer !== "object"
-        ) {
+    for (const block of sectionBlocks) {
+      const items = getBlockItems(block);
+      for (const item of items) {
+        const renderer = getVideoRenderer(item);
+        if (!renderer) {
           continue;
         }
-        const overlays: YoutubeNode[] =
-          (renderer as { thumbnailOverlays?: YoutubeNode[] })
-            .thumbnailOverlays ?? [];
-        const hasLiveBadge = overlays.some((overlay) => {
-          const style =
-            overlay?.thumbnailOverlayTimeStatusRenderer?.style ??
-            overlay?.thumbnailOverlayBadgeRenderer?.style;
-          return style === "LIVE";
-        });
-        if (hasLiveBadge) {
-          const title =
-            (renderer as {
-              title?: {
-                runs?: Array<{ text?: string }>;
-                simpleText?: string;
-              };
-            }).title?.runs?.[0]?.text ??
-            (renderer as {
-              title?: { simpleText?: string };
-            }).title?.simpleText ??
-            "";
-          return { videoId: renderer.videoId as string, title };
+        const videoId = getString(renderer["videoId"]);
+        if (!videoId) {
+          continue;
         }
+        if (!hasLiveBadge(renderer)) {
+          continue;
+        }
+        const title = extractTitle(renderer);
+        return { videoId, title };
       }
     }
   } catch (error) {
     console.warn("[youtube] failed to search live renderer", error);
   }
   return null;
+}
+
+function getSectionBlocks(raw: unknown): YoutubeNode[] {
+  if (!isRecord(raw)) {
+    return [];
+  }
+  const contentsNode = raw["contents"];
+  if (!isRecord(contentsNode)) {
+    return [];
+  }
+  const twoColumn = contentsNode["twoColumnBrowseResultsRenderer"];
+  if (!isRecord(twoColumn)) {
+    return [];
+  }
+  const tabs = asRecordArray(twoColumn["tabs"]);
+  const blocks: YoutubeNode[] = [];
+  for (const tab of tabs) {
+    const tabRenderer = tab["tabRenderer"];
+    if (!isRecord(tabRenderer)) {
+      continue;
+    }
+    const content = tabRenderer["content"];
+    if (!isRecord(content)) {
+      continue;
+    }
+    const section = content["sectionListRenderer"];
+    if (!isRecord(section)) {
+      continue;
+    }
+    blocks.push(...asRecordArray(section["contents"]));
+  }
+  return blocks;
+}
+
+function getBlockItems(block: YoutubeNode): YoutubeNode[] {
+  const items: YoutubeNode[] = [];
+  const itemSection = block["itemSectionRenderer"];
+  if (isRecord(itemSection)) {
+    items.push(...asRecordArray(itemSection["contents"]));
+  }
+  const richGrid = block["richGridRenderer"];
+  if (isRecord(richGrid)) {
+    items.push(...asRecordArray(richGrid["contents"]));
+  }
+  return items;
+}
+
+function getVideoRenderer(item: YoutubeNode): YoutubeNode | null {
+  const directRenderer = item["videoRenderer"];
+  if (isRecord(directRenderer)) {
+    return directRenderer;
+  }
+  const richItem = item["richItemRenderer"];
+  if (isRecord(richItem)) {
+    const content = richItem["content"];
+    if (isRecord(content)) {
+      const nested = content["videoRenderer"];
+      if (isRecord(nested)) {
+        return nested;
+      }
+    }
+  }
+  return null;
+}
+
+function hasLiveBadge(renderer: YoutubeNode) {
+  const overlays = renderer["thumbnailOverlays"];
+  if (!Array.isArray(overlays)) {
+    return false;
+  }
+  return overlays.some((overlay) => {
+    if (!isRecord(overlay)) {
+      return false;
+    }
+    const timeStatus = overlay["thumbnailOverlayTimeStatusRenderer"];
+    if (isRecord(timeStatus) && timeStatus["style"] === "LIVE") {
+      return true;
+    }
+    const badge = overlay["thumbnailOverlayBadgeRenderer"];
+    return isRecord(badge) && badge["style"] === "LIVE";
+  });
+}
+
+function extractTitle(renderer: YoutubeNode) {
+  const titleNode = renderer["title"];
+  if (!isRecord(titleNode)) {
+    return "";
+  }
+  const runs = titleNode["runs"];
+  if (Array.isArray(runs)) {
+    for (const run of runs) {
+      if (isRecord(run)) {
+        const text = getString(run["text"]);
+        if (text) {
+          return text;
+        }
+      }
+    }
+  }
+  return getString(titleNode["simpleText"]) ?? "";
 }
 
 export function calculateSimilarity(a: string, b: string) {
