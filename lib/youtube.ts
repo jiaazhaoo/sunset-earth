@@ -108,10 +108,12 @@ function findLiveRenderer(raw: unknown) {
     if (!Array.isArray(contents)) {
       return null;
     }
-    for (const block of contents) {
+    for (const block of contents as YoutubeNode[]) {
       const items =
-        block?.itemSectionRenderer?.contents ??
-        block?.richGridRenderer?.contents ??
+        (block as { itemSectionRenderer?: { contents?: YoutubeNode[] } })
+          ?.itemSectionRenderer?.contents ??
+        (block as { richGridRenderer?: { contents?: YoutubeNode[] } })
+          ?.richGridRenderer?.contents ??
         [];
       for (const item of items) {
         const renderer =
