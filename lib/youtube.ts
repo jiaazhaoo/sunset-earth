@@ -122,20 +122,35 @@ function findLiveRenderer(raw: unknown) {
             richItemRenderer?: { content?: { videoRenderer?: YoutubeNode } };
           }).richItemRenderer?.content?.videoRenderer ??
           null;
-        if (!renderer) continue;
-        const overlays: YoutubeNode[] = renderer.thumbnailOverlays ?? [];
+        if (
+          !renderer ||
+          typeof renderer.videoId !== "string" ||
+          typeof renderer !== "object"
+        ) {
+          continue;
+        }
+        const overlays: YoutubeNode[] =
+          (renderer as { thumbnailOverlays?: YoutubeNode[] })
+            .thumbnailOverlays ?? [];
         const hasLiveBadge = overlays.some((overlay) => {
           const style =
             overlay?.thumbnailOverlayTimeStatusRenderer?.style ??
             overlay?.thumbnailOverlayBadgeRenderer?.style;
           return style === "LIVE";
         });
-        if (hasLiveBadge && renderer.videoId) {
+        if (hasLiveBadge) {
           const title =
-            renderer.title?.runs?.[0]?.text ??
-            renderer.title?.simpleText ??
+            (renderer as {
+              title?: {
+                runs?: Array<{ text?: string }>;
+                simpleText?: string;
+              };
+            }).title?.runs?.[0]?.text ??
+            (renderer as {
+              title?: { simpleText?: string };
+            }).title?.simpleText ??
             "";
-          return { videoId: renderer.videoId, title };
+          return { videoId: renderer.videoId as string, title };
         }
       }
     }
