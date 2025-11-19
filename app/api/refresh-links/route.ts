@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { listCameras } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
 import { refreshCamera } from "@/lib/cameraRefresh";
@@ -7,8 +7,18 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    if (process.env.CRON_SECRET) {
+      const auth = request.headers.get("Authorization");
+      if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+        return NextResponse.json(
+          { error: "Unauthorized" },
+          { status: 401 }
+        );
+      }
+    }
+
     const cameras = await listCameras(500);
     const summary = {
       checked: cameras.length,
