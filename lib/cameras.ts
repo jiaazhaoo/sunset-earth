@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const CAMERA_COLUMNS =
-  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0";
+  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title";
 
 export type CameraRow = {
   camera_id: number | string;
@@ -13,17 +13,24 @@ export type CameraRow = {
   longitude: number | string | null;
   timezone: string | null;
   info_0: string | null;
+  tag: string | null;
+  host_link: string | null;
+  ytb_title: string | null;
 };
 
 export type CameraRecord = {
   id: string;
   name: string;
   embedUrl: string;
+  sourceUrl: string | null;
   lat: number | null;
   lng: number | null;
   timezone: string | null;
   city: string | null;
   country: string | null;
+  tags: string[];
+  hostLink: string | null;
+  ytbTitle: string | null;
 };
 
 export async function listCameras(limit = 200) {
@@ -72,12 +79,26 @@ function mapCameraRow(row: CameraRow): CameraRecord {
         ? `Camera ${row.camera_id}`
         : `Camera ${row.camera_id}`),
     embedUrl: buildEmbedUrl(row.link),
+    sourceUrl: row.link ?? null,
     lat: toNumber(row.latitude),
     lng: toNumber(row.longitude),
     timezone: row.timezone || null,
     city: row.city || null,
     country: row.country || null,
+    tags: parseTags(row.tag),
+    hostLink: row.host_link ?? null,
+    ytbTitle: row.ytb_title ?? null,
   };
+}
+
+function parseTags(value: string | null) {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
 }
 
 function toNumber(value: number | string | null) {

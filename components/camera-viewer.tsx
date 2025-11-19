@@ -1,28 +1,182 @@
 'use client';
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CameraRecord } from "@/lib/cameras";
 
 type Props = {
   initialCamera: CameraRecord | null;
 };
 
+const STORAGE_KEY = "sunset-earth-seen";
+const UNAVAILABLE_KEY = "sunset-earth-unavailable";
+const REFRESH_KEY = "sunset-earth-refresh-attempts";
+const REFRESH_COOLDOWN = 3 * 60 * 60 * 1000;
+
+type BestCameraResponse = {
+  camera: CameraRecord;
+  rotationReset?: boolean;
+};
+
+type RefreshResponse = {
+  camera?: CameraRecord;
+  updated?: boolean;
+};
+
+function VideoFrame({
+  camera,
+  onStreamError,
+}: {
+  camera: CameraRecord;
+  onStreamError: () => void;
+}) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const fallbackTimer = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (fallbackTimer.current) {
+      clearTimeout(fallbackTimer.current);
+    }
+    fallbackTimer.current = setTimeout(() => {
+      onStreamError();
+    }, 5000);
+    return () => {
+      if (fallbackTimer.current) {
+        clearTimeout(fallbackTimer.current);
+      }
+    };
+  }, [camera.embedUrl, onStreamError]);
+
+  return (
+    <iframe
+      ref={iframeRef}
+      key={camera.embedUrl}
+      src={camera.embedUrl}
+      title={camera.name}
+      allow="autoplay; encrypted-media; fullscreen"
+      allowFullScreen
+      className="h-full w-full"
+      onLoad={() => {
+        if (fallbackTimer.current) {
+          clearTimeout(fallbackTimer.current);
+        }
+        try {
+          const text =
+            iframeRef.current?.contentDocument?.body?.innerText ?? "";
+          if (text.includes("This live stream recording is not available")) {
+            onStreamError();
+          }
+        } catch (error) {
+          console.warn("iframe inspection failed", error);
+        }
+      }}
+      onError={() => {
+        if (fallbackTimer.current) {
+          clearTimeout(fallbackTimer.current);
+        }
+        onStreamError();
+      }}
+    />
+  );
+}
+
 export function CameraViewer({ initialCamera }: Props) {
   const [camera, setCamera] = useState<CameraRecord | null>(initialCamera);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seen, setSeen] = useState<string[]>([]);
+  const [blacklist, setBlacklist] = useState<string[]>([]);
+  const [refreshAttempts, setRefreshAttempts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(UNAVAILABLE_KEY);
+      if (stored) {
+        setBlacklist(JSON.parse(stored));
+      }
+    } catch {
+      setBlacklist([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(UNAVAILABLE_KEY, JSON.stringify(blacklist));
+  }, [blacklist]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(REFRESH_KEY);
+      if (stored) {
+        setRefreshAttempts(JSON.parse(stored));
+      }
+    } catch {
+      setRefreshAttempts({});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(REFRESH_KEY, JSON.stringify(refreshAttempts));
+  }, [refreshAttempts]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as string[];
+        setSeen(parsed);
+      }
+    } catch {
+      setSeen([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seen));
+  }, [seen]);
+
+  useEffect(() => {
+    if (camera?.id) {
+      setSeen((prev) =>
+        prev.includes(camera.id) ? prev : [...prev, camera.id]
+      );
+    }
+  }, [camera?.id]);
+
+  const excludeQuery = useMemo(() => {
+    const ids = [...new Set([...seen, ...blacklist])];
+    if (!ids.length) return "";
+    const params = new URLSearchParams();
+    params.set("exclude", ids.join(","));
+    return `?${params.toString()}`;
+  }, [seen, blacklist]);
 
   const handleSwitch = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/best-camera", { cache: "no-store" });
+      const response = await fetch(`/api/best-camera${excludeQuery}`, {
+        cache: "no-store",
+      });
       if (!response.ok) {
         throw new Error("Request failed");
       }
 
-      const payload = (await response.json()) as { camera: CameraRecord };
+      const payload = (await response.json()) as BestCameraResponse;
+      if (payload.rotationReset) {
+        setSeen(payload.camera.id ? [payload.camera.id] : []);
+      } else if (payload.camera.id) {
+        setSeen((prev) =>
+          prev.includes(payload.camera.id)
+            ? prev
+            : [...prev, payload.camera.id]
+        );
+      }
       setCamera(payload.camera);
     } catch {
       setError("切换摄像头失败，请稍后再试。");
@@ -31,18 +185,59 @@ export function CameraViewer({ initialCamera }: Props) {
     }
   };
 
+  const attemptRefresh = async (cam: CameraRecord | null) => {
+    if (!cam?.id) {
+      return false;
+    }
+    const now = Date.now();
+    const last = refreshAttempts[cam.id];
+    if (last && now - last < REFRESH_COOLDOWN) {
+      return false;
+    }
+    setRefreshAttempts((prev) => ({ ...prev, [cam.id]: now }));
+    try {
+      const response = await fetch("/api/refresh-camera", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cameraId: cam.id }),
+      });
+      if (!response.ok) {
+        return false;
+      }
+      const payload = (await response.json()) as RefreshResponse;
+      if (payload.camera) {
+        setCamera(payload.camera);
+        setBlacklist((prev) => prev.filter((id) => id !== cam.id));
+        return true;
+      }
+    } catch (err) {
+      console.warn("refresh camera failed", err);
+    }
+    return false;
+  };
+
+  const handleStreamFailure = async () => {
+    if (!camera) {
+      handleSwitch().catch(() => undefined);
+      return;
+    }
+    const recovered = await attemptRefresh(camera);
+    if (recovered) {
+      return;
+    }
+    if (camera.id) {
+      setBlacklist((prev) =>
+        prev.includes(camera.id) ? prev : [...prev, camera.id]
+      );
+    }
+    handleSwitch().catch(() => undefined);
+  };
+
   return (
     <section className="flex w-full flex-col gap-8">
       <div className="aspect-video w-full overflow-hidden rounded-2xl border border-zinc-200 bg-black shadow-sm">
         {camera?.embedUrl ? (
-          <iframe
-            key={camera.embedUrl}
-            src={camera.embedUrl}
-            title={camera.name}
-            allow="autoplay; encrypted-media; fullscreen"
-            allowFullScreen
-            className="h-full w-full"
-          />
+          <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-sm text-zinc-200">
             暂无可播放的摄像头

@@ -55,7 +55,9 @@ create index if not exists rooms_camera_id_idx on public.rooms (camera_id);
 | 11. 语音 & 聊天（Cloudflare Realtime） | `.env` 需 `CLOUDFLARE_BASIC_AUTH`（整段 Basic 头）+ `CLOUDFLARE_REALTIME_PRESET`；`lib/cloudflareRealtime.ts` 调用 `https://api.realtime.cloudflare.com/v2` 创建 meeting/participant，React 端通过 `RealtimeSidebar` 统一拉起会议，`RoomVoicePanel` 控制语音，`RtkChat` 提供聊天 UI |
 | 12. 浏览器提醒优化 | `RoomVoicePanel` 退出语音时除 `disableAudio()` 外，会 `stop()` 掉当前 `rawAudioTrack`，退出后浏览器不再提示占用麦克风 |
 | 13. 主题切换 & UI 统一 | 页面新增 `ThemeToggle`，可在亮/暗/跟随之间手动切换；`RtkChat` 自定义了浅色主题变量，暗色模式下亦可保持统一风格 |
-| 14. TODO | Presence（在线人数）与消息存储、历史回放 |
+| 14. 摄像头优选 + 轮询记忆 | `/api/best-camera` 接入 Open-Meteo，按“晴天+日落/日出窗口”打分，若标签包含 `City Skyline` 则插入一档优先级；前端通过本地存储记录已观看摄像头，切换按钮会优先播放未看过的高优先级摄像头，全部看完后自动轮回 |
+| 15. Live 自动修复 | 新增 `/api/refresh-camera`：当 iframe 提示直播不可用时，前端会先尝试调用该接口，用 `host_link` 所指频道里最相近（相似度 ≥ 0.75）的直播替换数据库的链接；若 3 小时内尝试失败则保持黑名单，下一次再触发 |
+| 16. TODO | Presence（在线人数）与消息存储、历史回放 |
 
 ### Cloudflare RealtimeKit 集成备忘（语音 + 聊天）
 
