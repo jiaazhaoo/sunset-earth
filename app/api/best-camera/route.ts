@@ -106,6 +106,9 @@ async function findBestCamera(exclude: Set<string>) {
   const scored = candidates
     .filter((entry): entry is typeof entry => entry !== null)
     .sort((a, b) => {
+      if (!a?.evaluation || !b?.evaluation) {
+        return 0;
+      }
       if (b.evaluation.score !== a.evaluation.score) {
         return b.evaluation.score - a.evaluation.score;
       }
