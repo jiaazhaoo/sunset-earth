@@ -89,10 +89,22 @@ function findLiveRenderer(raw: unknown) {
     ) {
       return null;
     }
-    const data = raw as { contents?: YoutubeNode };
+    const data = raw as {
+      contents?: {
+        twoColumnBrowseResultsRenderer?: {
+          tabs?: Array<{
+            tabRenderer?: {
+              content?: {
+                sectionListRenderer?: { contents?: YoutubeNode[] };
+              };
+            };
+          }>;
+        };
+      };
+    };
     const contents =
-      (data.contents as YoutubeNode | undefined)?.twoColumnBrowseResultsRenderer
-        ?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents;
+      data.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer
+        ?.content?.sectionListRenderer?.contents;
     if (!Array.isArray(contents)) {
       return null;
     }
