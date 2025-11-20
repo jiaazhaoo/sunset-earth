@@ -42,6 +42,23 @@ async function checkYoutubeAvailability(url: string) {
     return true;
   }
 
+  const oembedUrl = buildYoutubeWatchUrl(url);
+  if (oembedUrl) {
+    const oembedResponse = await fetch(
+      `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
+        oembedUrl
+      )}`,
+      {
+        method: "GET",
+        headers: { "User-Agent": "SunsetEarth/1.0 availability" },
+        cache: "no-store",
+      }
+    );
+    if (!oembedResponse.ok) {
+      return false;
+    }
+  }
+
   const response = await fetch(targetUrl, {
     method: "GET",
     headers: { "User-Agent": "SunsetEarth/1.0 availability" },
@@ -54,6 +71,9 @@ async function checkYoutubeAvailability(url: string) {
   }
 
   const html = await response.text();
+  if (hasPlayabilityBlock(html)) {
+    return false;
+  }
   const unavailablePhrases = [
     "This live stream recording is not available",
     "Video unavailable",
@@ -133,4 +153,23 @@ function buildYoutubeEmbedUrl(url: string) {
     console.warn("[availability] invalid youtube url", error);
     return null;
   }
+}
+
+function hasPlayabilityBlock(html: string) {
+  try {
+    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]+?\})\s*;/);
+    if (!match) {
+      return false;
+    }
+    const data = JSON.parse(match[1]) as {
+      playabilityStatus?: { status?: string; reason?: string };
+    };
+    const status = data.playabilityStatus?.status;
+    if (status && status !== "OK") {
+      return true;
+    }
+  } catch (error) {
+    console.warn("[availability] failed to parse playability", error);
+  }
+  return false;
 }
