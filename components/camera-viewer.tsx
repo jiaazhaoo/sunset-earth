@@ -86,6 +86,7 @@ export function CameraViewer({ initialCamera }: Props) {
   const [seen, setSeen] = useState<string[]>([]);
   const [blacklist, setBlacklist] = useState<string[]>([]);
   const [refreshAttempts, setRefreshAttempts] = useState<Record<string, number>>({});
+  const failureHandlerRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -236,6 +237,41 @@ export function CameraViewer({ initialCamera }: Props) {
     }
     handleSwitch().catch(() => undefined);
   };
+
+  failureHandlerRef.current = handleStreamFailure;
+
+  useEffect(() => {
+    if (!camera?.embedUrl) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/check-camera", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            camera: {
+              embedUrl: camera.embedUrl,
+              sourceUrl: camera.sourceUrl,
+            },
+          }),
+        });
+        if (!response.ok) {
+          return;
+        }
+        const { available } = (await response.json()) as { available: boolean };
+        if (!available && !cancelled) {
+          failureHandlerRef.current();
+        }
+      } catch (err) {
+        console.warn("camera availability probe failed", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [camera?.embedUrl, camera?.sourceUrl, camera?.id]);
 
   return (
     <section className="flex w-full flex-col gap-8">
