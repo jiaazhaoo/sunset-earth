@@ -127,7 +127,12 @@ function buildEmbedUrl(link: string | null) {
 
     if (host === "youtu.be") {
       const videoId = url.pathname.replace("/", "");
-      return withEmbedParams(`https://www.youtube.com/embed/${videoId}`);
+      if (videoId) {
+        return withEmbedParams(
+          `https://www.youtube.com/embed/${videoId}`,
+          url.searchParams
+        );
+      }
     }
 
     if (host.includes("youtube.com")) {
@@ -135,7 +140,8 @@ function buildEmbedUrl(link: string | null) {
         const videoId = url.searchParams.get("v");
         if (videoId) {
           return withEmbedParams(
-            `https://www.youtube.com/embed/${videoId}`
+            `https://www.youtube.com/embed/${videoId}`,
+            url.searchParams
           );
         }
       }
@@ -144,24 +150,31 @@ function buildEmbedUrl(link: string | null) {
         const videoId = url.pathname.split("/").pop();
         if (videoId) {
           return withEmbedParams(
-            `https://www.youtube.com/embed/${videoId}`
+            `https://www.youtube.com/embed/${videoId}`,
+            url.searchParams
           );
         }
       }
 
       if (url.pathname.startsWith("/embed/")) {
-        return withEmbedParams(url.toString());
+        return withEmbedParams(url.toString(), url.searchParams);
       }
     }
   } catch (error) {
     console.warn("Failed to parse camera link:", error);
   }
 
-  return link;
+  return withEmbedParams(link);
 }
 
-function withEmbedParams(url: string) {
+function withEmbedParams(url: string, originalParams?: URLSearchParams) {
   const embedUrl = new URL(url);
+  if (originalParams?.has("list")) {
+    embedUrl.searchParams.set("list", originalParams.get("list") ?? "");
+  }
+  if (originalParams?.has("index")) {
+    embedUrl.searchParams.set("index", originalParams.get("index") ?? "");
+  }
   embedUrl.searchParams.set("autoplay", "1");
   embedUrl.searchParams.set("mute", "1");
   embedUrl.searchParams.set("rel", "0");

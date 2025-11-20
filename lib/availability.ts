@@ -67,24 +67,31 @@ async function checkYoutubeAvailability(url: string) {
 function buildYoutubeWatchUrl(url: string) {
   try {
     const parsed = new URL(url);
+    const params = new URLSearchParams();
+    if (parsed.searchParams.has("list")) {
+      params.set("list", parsed.searchParams.get("list") ?? "");
+    }
+    if (parsed.searchParams.has("index")) {
+      params.set("index", parsed.searchParams.get("index") ?? "");
+    }
     if (parsed.hostname === "youtu.be") {
-      return `https://www.youtube.com/watch?v=${parsed.pathname.replace("/", "")}`;
+      const entry = parsed.pathname.replace("/", "");
+      if (!entry) return null;
+      params.set("v", entry);
+      const query = params.toString();
+      return `https://www.youtube.com/watch${query ? `?${query}` : ""}`;
     }
 
     if (parsed.pathname.startsWith("/embed/")) {
       const id = parsed.pathname.split("/")[2];
-      return id ? `https://www.youtube.com/watch?v=${id}` : null;
+      if (!id) return null;
+      params.set("v", id);
+      const query = params.toString();
+      return `https://www.youtube.com/watch${query ? `?${query}` : ""}`;
     }
 
     if (parsed.searchParams.has("v")) {
-      const params = new URLSearchParams();
       params.set("v", parsed.searchParams.get("v") ?? "");
-      if (parsed.searchParams.has("list")) {
-        params.set("list", parsed.searchParams.get("list") ?? "");
-      }
-      if (parsed.searchParams.has("index")) {
-        params.set("index", parsed.searchParams.get("index") ?? "");
-      }
       const query = params.toString();
       return `https://www.youtube.com/watch${query ? `?${query}` : ""}`;
     }
