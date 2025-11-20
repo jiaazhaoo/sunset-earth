@@ -176,9 +176,22 @@ type ParticipantInfo = {
 };
 
 function ParticipantsPanel({ isReady }: { isReady: boolean }) {
+  const { meeting } = useRealtimeKitMeeting();
   const participants = useRealtimeKitSelector<ParticipantInfo[]>((client) => {
     if (!client || !client.participants) {
       return [];
+    }
+    const joined =
+      client.participants.joined?.toArray?.().map((participant) => ({
+        id:
+          participant.customParticipantId ??
+          participant.id ??
+          participant.userId,
+        name: participant.name || "Sunset Guest",
+        picture: participant.picture,
+      })) ?? [];
+    if (joined.length > 0) {
+      return joined;
     }
     const list = client.participants.all?.toArray?.() ?? [];
     return list.map((participant) => ({
@@ -188,8 +201,32 @@ function ParticipantsPanel({ isReady }: { isReady: boolean }) {
     }));
   });
 
-  const avatars = useMemo(() => participants.slice(0, 6), [participants]);
-  const remaining = participants.length - avatars.length;
+  const participantsWithSelf = useMemo(() => {
+    if (!meeting?.self) {
+      return participants;
+    }
+    const selfId =
+      meeting.self.customParticipantId ??
+      (meeting.self as { userId?: string }).userId ??
+      "self";
+    if (participants.some((p) => p.id === selfId)) {
+      return participants;
+    }
+    return [
+      {
+        id: selfId,
+        name: meeting.self.name || "我",
+        picture: (meeting.self as { picture?: string }).picture,
+      },
+      ...participants,
+    ];
+  }, [meeting?.self, participants]);
+
+  const avatars = useMemo(
+    () => participantsWithSelf.slice(0, 6),
+    [participantsWithSelf]
+  );
+  const remaining = participantsWithSelf.length - avatars.length;
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -198,7 +235,7 @@ function ParticipantsPanel({ isReady }: { isReady: boolean }) {
           <p className="text-sm font-semibold text-zinc-900">房间成员</p>
           <p className="text-xs text-zinc-500">
             {isReady
-              ? `${participants.length || 0} 人正在房间`
+              ? `${participantsWithSelf.length || 0} 人正在房间`
               : "正在连接实时状态…"}
           </p>
         </div>
@@ -206,7 +243,7 @@ function ParticipantsPanel({ isReady }: { isReady: boolean }) {
       <div className="mt-3 flex flex-wrap gap-3">
         {!isReady ? (
           <p className="text-sm text-zinc-500">等待成员加入...</p>
-        ) : participants.length === 0 ? (
+        ) : participantsWithSelf.length === 0 ? (
           <p className="text-sm text-zinc-500">
             目前只有你在房间，快邀请朋友吧！
           </p>
