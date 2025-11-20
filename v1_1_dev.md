@@ -10,6 +10,7 @@
 | `camera_id`        | `text`        | —                   | 对应 `camera_ytb.camera_id`；房间创建时记录所选摄像头 |
 | `room_start_time`  | `timestamptz` | `now()`             | 房间创建时间，使用 `timestamptz` 自动保存 UTC 并可换算任意时区 |
 | `room_end_time`    | `timestamptz` | `now()`             | 最近活跃时间，后续进入房间/聊天时更新，用于清理长期空房 |
+| `last_empty_at`    | `timestamptz` | `null`              | 房间最后一次变成 0 人的时间，前端 Presence 上报；用于 15 分钟后自动关闭 |
 | `room_timezone`    | `text`        | —                   | 记录房间参考的时区，推荐写摄像头所在时区（IANA 名称，如 `America/Los_Angeles`） |
 | `room_type`        | `text`        | `'public'`          | 房间类型，预留值：`public`（全民可见）、`private`（需分享链接）；后续可改为 enum |
 | `voice_meeting_id` | `text`        | —                   | Cloudflare RealtimeKit Meeting ID，对应语音/聊天所用会议；在 Cloudflare 上创建后写入 |
@@ -28,7 +29,8 @@ create table if not exists public.rooms (
   room_timezone text,
   room_type text not null default 'public',
   voice_meeting_id text,
-  is_close boolean not null default false
+  is_close boolean not null default false,
+  last_empty_at timestamptz
 );
 
 create index if not exists rooms_camera_id_idx on public.rooms (camera_id);
@@ -59,8 +61,9 @@ create index if not exists rooms_camera_id_idx on public.rooms (camera_id);
 | 13. 主题切换 & UI 统一 | 页面新增 `ThemeToggle`，可在亮/暗/跟随之间手动切换；`RtkChat` 自定义了浅色主题变量，暗色模式下亦可保持统一风格 |
 | 14. 摄像头优选 + 轮询记忆 | `/api/best-camera` 接入 Open-Meteo，按“晴天+日落/日出窗口”打分，若标签包含 `City Skyline` 则插入一档优先级；前端通过本地存储记录已观看摄像头，切换按钮会优先播放未看过的高优先级摄像头，全部看完后自动轮回 |
 | 15. Live 自动修复 | 新增 `/api/refresh-camera`：当 iframe 提示直播不可用时，前端会先尝试调用该接口，用 `host_link` 所指频道里最相近（相似度 ≥ 0.75）的直播替换数据库的链接，并把 `link_available` 置为 true；若 3 小时内尝试失败则调用 `/api/camera-availability` 把 `link_available` 标记为 false，下一次再触发 |
-| 16. 每小时巡检（Cron） | 新增 `/api/refresh-links`（供 Vercel Cron 调用）：每小时拉取所有摄像头，利用 `isCameraAvailable` 检查流是否可用，自动更新 `link_available`，并对不可用的摄像头调用和 `/api/refresh-camera` 相同的频道刷新逻辑；确保黑名单会自行恢复，同时复用 Cloudflare Realtime API 定期扫描房间，如某个房间已运行 15 分钟且 `voice_meeting_id` 不再有参与者，则把 `is_close` 置为 `true` 并把 `room_end_time` 递交关闭时间，页面访问时提示“日落已经结束”而不是直接 404 |
-| 17. TODO | Presence（在线人数）与消息存储、历史回放 |
+| 16. 每小时巡检（Cron） | 新增 `/api/refresh-links`（供 Vercel Cron 调用）：每小时拉取所有摄像头，利用 `isCameraAvailable` 检查流是否可用，自动更新 `link_available`，并对不可用的摄像头调用和 `/api/refresh-camera` 相同的频道刷新逻辑；确保黑名单会自行恢复。同时引入 Cloudflare Realtime Presence：客户端在 `RealtimeSidebar` 中统计房间成员数并上报 `/api/room-presence`，服务端记录 `last_empty_at`，Cron 只要发现该时间早于 15 分钟前即把 `is_close` 设为 `true` 并记录真实关房时间，URL 会展示“日落已经结束”。 |
+| 17. Presence 上报接口 | `POST /api/room-presence`：body `{ roomId, count }`，当 `count` > 0 清空 `last_empty_at` 表示房间活跃，当 `count` = 0 记录时间戳；配合 `cleanupEmptyRooms` 可在 15 分钟后自动关闭房间 |
+| 18. TODO | Presence（在线人数）与消息存储、历史回放 |
 
 ### Cloudflare RealtimeKit 集成备忘（语音 + 聊天）
 

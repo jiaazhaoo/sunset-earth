@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   RealtimeKitProvider,
   useRealtimeKitClient,
@@ -110,7 +110,7 @@ function RealtimeProviderShell({ roomId }: Props) {
 
   return (
     <RealtimeKitProvider value={meeting}>
-      <SidebarContent status={status} error={error} />
+      <SidebarContent status={status} error={error} roomId={roomId} />
     </RealtimeKitProvider>
   );
 }
@@ -118,9 +118,11 @@ function RealtimeProviderShell({ roomId }: Props) {
 function SidebarContent({
   status,
   error,
+  roomId,
 }: {
   status: MeetingConnectionStatus;
   error: string | null;
+  roomId: string;
 }) {
   const { meeting } = useRealtimeKitMeeting();
 
@@ -135,7 +137,10 @@ function SidebarContent({
   return (
     <div className="flex flex-col gap-4">
       <RoomVoicePanel status={status} />
-      <ParticipantsPanel isReady={Boolean(meeting && status === "connected")} />
+      <ParticipantsPanel
+        isReady={Boolean(meeting && status === "connected")}
+        roomId={roomId}
+      />
       {meeting && status === "connected" ? (
         <>
           <div className="rounded-2xl border border-zinc-200 bg-white p-0 shadow-sm">
@@ -175,7 +180,13 @@ type ParticipantInfo = {
   picture?: string;
 };
 
-function ParticipantsPanel({ isReady }: { isReady: boolean }) {
+function ParticipantsPanel({
+  isReady,
+  roomId,
+}: {
+  isReady: boolean;
+  roomId: string;
+}) {
   const { meeting } = useRealtimeKitMeeting();
   const participants = useRealtimeKitSelector<ParticipantInfo[]>((client) => {
     if (!client || !client.participants) {
@@ -227,6 +238,12 @@ function ParticipantsPanel({ isReady }: { isReady: boolean }) {
     [participantsWithSelf]
   );
   const remaining = participantsWithSelf.length - avatars.length;
+
+  usePresenceReporter({
+    roomId,
+    isReady,
+    count: participantsWithSelf.length,
+  });
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -292,4 +309,69 @@ function ParticipantAvatar({ participant }: { participant: ParticipantInfo }) {
       {initials}
     </div>
   );
+}
+
+function usePresenceReporter({
+  roomId,
+  isReady,
+  count,
+}: {
+  roomId: string;
+  isReady: boolean;
+  count: number;
+}) {
+  const lastReported = useRef<number | null>(null);
+
+  useEffect(() => {
+    const nextCount = isReady ? count : 0;
+    if (!roomId) {
+      return;
+    }
+    if (lastReported.current === nextCount) {
+      return;
+    }
+    lastReported.current = nextCount;
+
+    const controller = new AbortController();
+    fetch("/api/room-presence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomId, count: nextCount }),
+      signal: controller.signal,
+      keepalive: true,
+    }).catch(() => undefined);
+
+    return () => controller.abort();
+  }, [roomId, isReady, count]);
+
+  useEffect(() => {
+    if (!roomId) {
+      return;
+    }
+
+    const handleUnload = () => {
+      try {
+        navigator.sendBeacon(
+          "/api/room-presence",
+          JSON.stringify({ roomId, count: 0 })
+        );
+      } catch {
+        // ignore
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        handleUnload();
+      }
+    };
+
+    window.addEventListener("beforeunload", handleUnload);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [roomId]);
 }
