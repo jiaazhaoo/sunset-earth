@@ -61,9 +61,9 @@ export async function fetchChannelLiveVideo(
 
   const initialData = extractJson(html, "ytInitialData");
   if (initialData) {
-    const liveVideo = findLiveRenderer(initialData);
-    if (liveVideo) {
-      return liveVideo;
+    const candidates = findLiveRenderer(initialData);
+    if (candidates.length) {
+      return candidates[0];
     }
   }
 
@@ -89,12 +89,13 @@ function extractJson(html: string, key: string) {
 
 type YoutubeNode = Record<string, unknown>;
 
-function findLiveRenderer(raw: unknown): LiveVideoInfo | null {
+function findLiveRenderer(raw: unknown): LiveVideoInfo[] {
   try {
     const sectionBlocks = getSectionBlocks(raw);
     if (!sectionBlocks.length) {
-      return null;
+      return [] as LiveVideoInfo[];
     }
+    const candidates: LiveVideoInfo[] = [];
     for (const block of sectionBlocks) {
       const items = getBlockItems(block);
       for (const item of items) {
@@ -110,13 +111,14 @@ function findLiveRenderer(raw: unknown): LiveVideoInfo | null {
           continue;
         }
         const title = extractTitle(renderer);
-        return { videoId, title };
+        candidates.push({ videoId, title });
       }
     }
+    return candidates;
   } catch (error) {
     console.warn("[youtube] failed to search live renderer", error);
   }
-  return null;
+  return [];
 }
 
 function getSectionBlocks(raw: unknown): YoutubeNode[] {
