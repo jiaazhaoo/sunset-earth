@@ -157,9 +157,17 @@ function getSectionBlocks(raw: unknown): YoutubeNode[] {
     }
     const section = content["sectionListRenderer"];
     if (!isRecord(section)) {
+      const richGrid = content["richGridRenderer"];
+      if (isRecord(richGrid)) {
+        blocks.push(content);
+      }
       continue;
     }
     blocks.push(...asRecordArray(section["contents"]));
+    const richGrid = content["richGridRenderer"];
+    if (isRecord(richGrid)) {
+      blocks.push(content);
+    }
   }
   return blocks;
 }
