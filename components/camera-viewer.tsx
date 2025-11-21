@@ -260,8 +260,12 @@ export function CameraViewer({ initialCamera }: Props) {
         if (!response.ok) {
           return;
         }
-        const { available } = (await response.json()) as { available: boolean };
+        const { available, reason } = (await response.json()) as {
+          available: boolean;
+          reason?: string;
+        };
         if (!available && !cancelled) {
+          console.warn("camera preflight failed", reason);
           failureHandlerRef.current();
         }
       } catch (err) {

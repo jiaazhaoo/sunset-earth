@@ -63,7 +63,7 @@ create index if not exists rooms_camera_id_idx on public.rooms (camera_id);
 | 15. Live 自动修复 | 新增 `/api/refresh-camera`：当 iframe 提示直播不可用时，前端会先尝试调用该接口，用 `host_link` 所指频道里最相近（相似度 ≥ 0.75）的直播替换数据库的链接，并把 `link_available` 置为 true；若 3 小时内尝试失败则调用 `/api/camera-availability` 把 `link_available` 标记为 false，下一次再触发 |
 | 16. 每小时巡检（Cron） | 新增 `/api/refresh-links`（供 Vercel Cron 调用）：每小时拉取所有摄像头，利用 `isCameraAvailable` 检查流是否可用，自动更新 `link_available`，并对不可用的摄像头调用和 `/api/refresh-camera` 相同的频道刷新逻辑；确保黑名单会自行恢复。同时引入 Cloudflare Realtime Presence：客户端在 `RealtimeSidebar` 中统计房间成员数并上报 `/api/room-presence`，服务端记录 `last_empty_at`，Cron 只要发现该时间早于 15 分钟前即把 `is_close` 设为 `true` 并记录真实关房时间，URL 会展示“日落已经结束”。 |
 | 17. Presence 上报接口 | `POST /api/room-presence`：body `{ roomId, count }`，当 `count` > 0 清空 `last_empty_at` 表示房间活跃，当 `count` = 0 记录时间戳；配合 `cleanupEmptyRooms` 可在 15 分钟后自动关闭房间 |
-| 18. 播放前可用性检测 | `components/CameraViewer` 在切换摄像头后调用 `/api/check-camera`，由服务端复用 `isCameraAvailable` 对 YouTube 页面做一次探测；若检测到“Playback disabled”等文案，会立即触发前端的 `handleStreamFailure`、标记 `link_available=false` 并切换下一个摄像头，避免用户看到错误画面 |
+| 18. 播放前可用性检测 | `components/CameraViewer` 在切换摄像头后调用 `/api/check-camera`，由服务端复用 `isCameraAvailable` 对 YouTube 页面做一次探测；若检测到“Playback disabled”等文案，会立即触发前端的 `handleStreamFailure`、标记 `link_available=false` 并切换下一个摄像头，避免用户看到错误画面；该接口会返回 `{ available, reason }`，枚举 `reason` 包含 `missing_embed`、`oembed_forbidden`、`playability_blocked`、`unavailable_text` 等，可用于区分“作者禁嵌入”与“链接失效” |
 | 19. TODO | Presence（在线人数）与消息存储、历史回放 |
 
 ### Cloudflare RealtimeKit 集成备忘（语音 + 聊天）

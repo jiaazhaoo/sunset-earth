@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const available = await isCameraAvailable({
+    const availability = await isCameraAvailable({
       id: camera.embedUrl,
       name: "probe",
       embedUrl: camera.embedUrl,
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       linkAvailable: true,
     });
 
-    return NextResponse.json({ available });
+    return NextResponse.json(availability);
   } catch (error) {
     console.error("[api/check-camera]", error);
     return NextResponse.json(

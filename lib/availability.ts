@@ -2,51 +2,69 @@ import type { CameraRecord } from "@/lib/cameras";
 
 const TTL_MS = 15 * 60 * 1000;
 
+export type AvailabilityReason =
+  | "ok"
+  | "missing_embed"
+  | "oembed_forbidden"
+  | "oembed_error"
+  | "playability_blocked"
+  | "unavailable_text"
+  | "not_found"
+  | "fetch_error"
+  | "error";
+
+export type AvailabilityResult = {
+  available: boolean;
+  reason: AvailabilityReason;
+};
+
 const availabilityCache = new Map<
   string,
-  { status: boolean; fetchedAt: number }
+  { result: AvailabilityResult; fetchedAt: number }
 >();
 
-export async function isCameraAvailable(camera: CameraRecord) {
+export async function isCameraAvailable(
+  camera: CameraRecord
+): Promise<AvailabilityResult> {
   if (!camera.embedUrl) {
-    return false;
+    return { available: false, reason: "missing_embed" };
   }
 
   const key = camera.sourceUrl ?? camera.embedUrl;
   const cached = availabilityCache.get(key);
   if (cached && Date.now() - cached.fetchedAt < TTL_MS) {
-    return cached.status;
+    return cached.result;
   }
 
-  let status = true;
+  let result: AvailabilityResult = { available: true, reason: "ok" };
   try {
     if (isYoutubeUrl(key)) {
-      status = await checkYoutubeAvailability(key);
+      result = await checkYoutubeAvailability(key);
     }
   } catch (error) {
     console.warn("[availability] check failed", error);
-    status = true;
+    result = { available: true, reason: "error" };
   }
 
-  availabilityCache.set(key, { status, fetchedAt: Date.now() });
-  return status;
+  availabilityCache.set(key, { result, fetchedAt: Date.now() });
+  return result;
 }
 
 function isYoutubeUrl(url: string) {
   return /youtu\.be|youtube\.com/.test(url);
 }
 
-async function checkYoutubeAvailability(url: string) {
+async function checkYoutubeAvailability(url: string): Promise<AvailabilityResult> {
   const targetUrl = buildYoutubeEmbedUrl(url) ?? buildYoutubeWatchUrl(url);
   if (!targetUrl) {
-    return true;
+    return { available: false, reason: "missing_embed" };
   }
 
-  const oembedUrl = buildYoutubeWatchUrl(url);
-  if (oembedUrl) {
+  const watchProbe = buildYoutubeWatchUrl(url);
+  if (watchProbe) {
     const oembedResponse = await fetch(
       `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
-        oembedUrl
+        watchProbe
       )}`,
       {
         method: "GET",
@@ -55,7 +73,11 @@ async function checkYoutubeAvailability(url: string) {
       }
     );
     if (!oembedResponse.ok) {
-      return false;
+      const reason =
+        oembedResponse.status === 401 || oembedResponse.status === 403
+          ? "oembed_forbidden"
+          : "oembed_error";
+      return { available: false, reason };
     }
   }
 
@@ -67,12 +89,14 @@ async function checkYoutubeAvailability(url: string) {
   });
 
   if (!response.ok) {
-    return false;
+    const reason =
+      response.status === 404 ? "not_found" : "fetch_error";
+    return { available: false, reason };
   }
 
   const html = await response.text();
   if (hasPlayabilityBlock(html)) {
-    return false;
+    return { available: false, reason: "playability_blocked" };
   }
   const unavailablePhrases = [
     "This live stream recording is not available",
@@ -81,19 +105,19 @@ async function checkYoutubeAvailability(url: string) {
     "Playback on other websites has been disabled",
   ];
 
-  return !unavailablePhrases.some((phrase) => html.includes(phrase));
+  if (unavailablePhrases.some((phrase) => html.includes(phrase))) {
+    return { available: false, reason: "unavailable_text" };
+  }
+
+  return { available: true, reason: "ok" };
 }
 
 function buildYoutubeWatchUrl(url: string) {
   try {
     const parsed = new URL(url);
     const params = new URLSearchParams();
-    if (parsed.searchParams.has("list")) {
-      params.set("list", parsed.searchParams.get("list") ?? "");
-    }
-    if (parsed.searchParams.has("index")) {
-      params.set("index", parsed.searchParams.get("index") ?? "");
-    }
+    copyPlaylistParams(parsed.searchParams, params);
+
     if (parsed.hostname === "youtu.be") {
       const entry = parsed.pathname.replace("/", "");
       if (!entry) return null;
@@ -141,12 +165,7 @@ function buildYoutubeEmbedUrl(url: string) {
     }
 
     const params = new URLSearchParams();
-    if (parsed.searchParams.has("list")) {
-      params.set("list", parsed.searchParams.get("list") ?? "");
-    }
-    if (parsed.searchParams.has("index")) {
-      params.set("index", parsed.searchParams.get("index") ?? "");
-    }
+    copyPlaylistParams(parsed.searchParams, params);
     const query = params.toString();
     return `https://www.youtube.com/embed/${videoId}${query ? `?${query}` : ""}`;
   } catch (error) {
@@ -172,4 +191,22 @@ function hasPlayabilityBlock(html: string) {
     console.warn("[availability] failed to parse playability", error);
   }
   return false;
+}
+
+function copyPlaylistParams(
+  source: URLSearchParams,
+  target: URLSearchParams
+) {
+  if (source.has("list")) {
+    const list = source.get("list");
+    if (list) {
+      target.set("list", list);
+    }
+  }
+  if (source.has("index")) {
+    const index = source.get("index");
+    if (index) {
+      target.set("index", index);
+    }
+  }
 }

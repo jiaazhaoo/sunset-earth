@@ -60,8 +60,8 @@ async function findBestCamera(exclude: Set<string>) {
         return null;
       }
 
-      const playable = await isCameraAvailable(camera);
-      if (!playable) {
+      const availability = await isCameraAvailable(camera);
+      if (!availability.available) {
         return null;
       }
 

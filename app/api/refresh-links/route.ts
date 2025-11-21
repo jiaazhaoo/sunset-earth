@@ -26,12 +26,13 @@ export async function GET(request: NextRequest) {
       refreshed: 0,
       markedUnavailable: 0,
       markedAvailable: 0,
+      unavailableReasons: {} as Record<string, number>,
     };
 
     for (const camera of cameras) {
       try {
-        const playable = await isCameraAvailable(camera);
-        if (playable) {
+        const availability = await isCameraAvailable(camera);
+        if (availability.available) {
           if (!camera.linkAvailable) {
             await supabaseAdmin
               .from("camera_ytb")
@@ -41,6 +42,8 @@ export async function GET(request: NextRequest) {
           }
           continue;
         }
+        summary.unavailableReasons[availability.reason] =
+          (summary.unavailableReasons[availability.reason] ?? 0) + 1;
 
         const result = await refreshCamera(camera);
         if (result.updated) {
