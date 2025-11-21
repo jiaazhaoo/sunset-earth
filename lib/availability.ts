@@ -62,6 +62,11 @@ async function checkYoutubeAvailability(url: string): Promise<AvailabilityResult
 
   const watchProbe = buildYoutubeWatchUrl(url);
   if (watchProbe) {
+    const playable = await fetchPlayabilityStatus(watchProbe);
+    if (playable === "UNPLAYABLE") {
+      return { available: false, reason: "unavailable_text" };
+    }
+
     const oembedResponse = await fetch(
       `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
         watchProbe
@@ -110,6 +115,31 @@ async function checkYoutubeAvailability(url: string): Promise<AvailabilityResult
   }
 
   return { available: true, reason: "ok" };
+}
+
+async function fetchPlayabilityStatus(url: string) {
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { "User-Agent": "SunsetEarth/1.0 availability" },
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const html = await response.text();
+    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]+?\})\s*;/);
+    if (!match) {
+      return null;
+    }
+    const data = JSON.parse(match[1]) as {
+      playabilityStatus?: { status?: string };
+    };
+    return data.playabilityStatus?.status ?? null;
+  } catch (error) {
+    console.warn("[availability] playability status parse failed", error);
+    return null;
+  }
 }
 
 function buildYoutubeWatchUrl(url: string) {
