@@ -25,6 +25,11 @@ export async function GET(request: NextRequest) {
       markedUnavailable: 0,
       markedAvailable: 0,
       unavailableReasons: {} as Record<string, number>,
+      details: [] as Array<{
+        id: string;
+        status: "available" | "unavailable";
+        reason?: string;
+      }>,
     };
 
     for (const camera of cameras) {
@@ -37,6 +42,11 @@ export async function GET(request: NextRequest) {
               .update({ link_available: true })
               .eq("camera_id", camera.id);
             summary.markedAvailable++;
+            summary.details.push({
+              id: camera.id,
+              status: "available",
+            });
+            console.log("[refresh-links] restored", camera.id);
           }
           continue;
         }
@@ -45,6 +55,12 @@ export async function GET(request: NextRequest) {
 
         await markUnavailable(camera.id);
         summary.markedUnavailable++;
+        summary.details.push({
+          id: camera.id,
+          status: "unavailable",
+          reason: availability.reason,
+        });
+        console.log("[refresh-links] marked unavailable", camera.id, availability.reason);
       } catch (error) {
         console.warn("[refresh-links] failed for camera", camera.id, error);
       }
