@@ -18,6 +18,14 @@ export default async function Home() {
             我们从世界各地挑选最佳的 YouTube 摄像头，随时看到正在发生的日落风景。
             点击切换即可秒换下一个摄像头。
           </p>
+          <div className="flex flex-wrap gap-3">
+            <a
+              href="/all-cameras"
+              className="inline-flex items-center rounded-full border border-orange-200 px-4 py-2 text-sm font-medium text-orange-600 transition hover:border-orange-500 hover:text-orange-800"
+            >
+              查看全部摄像头
+            </a>
+          </div>
         </header>
 
         <CameraViewer initialCamera={initialCamera} />
