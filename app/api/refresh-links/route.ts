@@ -29,6 +29,12 @@ export async function GET(request: NextRequest) {
       unavailableReasons: {} as Record<string, number>,
     };
 
+    const skipRefreshReasons = new Set([
+      "unavailable_text",
+      "playability_blocked",
+      "oembed_forbidden",
+    ]);
+
     for (const camera of cameras) {
       try {
         const availability = await isCameraAvailable(camera);
@@ -45,16 +51,19 @@ export async function GET(request: NextRequest) {
         summary.unavailableReasons[availability.reason] =
           (summary.unavailableReasons[availability.reason] ?? 0) + 1;
 
+        if (skipRefreshReasons.has(availability.reason)) {
+          await markUnavailable(camera.id);
+          summary.markedUnavailable++;
+          continue;
+        }
+
         const result = await refreshCamera(camera);
         if (result.updated) {
           summary.refreshed++;
           continue;
         }
 
-        await supabaseAdmin
-          .from("camera_ytb")
-          .update({ link_available: false })
-          .eq("camera_id", camera.id);
+        await markUnavailable(camera.id);
         summary.markedUnavailable++;
       } catch (error) {
         console.warn("[refresh-links] failed for camera", camera.id, error);
@@ -73,5 +82,16 @@ export async function GET(request: NextRequest) {
       { error: "Failed to refresh links" },
       { status: 500 }
     );
+  }
+}
+
+async function markUnavailable(cameraId: string) {
+  const { error } = await supabaseAdmin
+    .from("camera_ytb")
+    .update({ link_available: false })
+    .eq("camera_id", cameraId);
+
+  if (error) {
+    throw new Error(error.message);
   }
 }
