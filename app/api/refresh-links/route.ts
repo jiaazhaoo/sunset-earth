@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listCameras } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
-import { refreshCamera } from "@/lib/cameraRefresh";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { cleanupEmptyRooms } from "@/lib/roomCleanup";
 
@@ -23,17 +22,10 @@ export async function GET(request: NextRequest) {
     const cameras = await listCameras(500);
     const summary = {
       checked: cameras.length,
-      refreshed: 0,
       markedUnavailable: 0,
       markedAvailable: 0,
       unavailableReasons: {} as Record<string, number>,
     };
-
-    const skipRefreshReasons = new Set([
-      "unavailable_text",
-      "playability_blocked",
-      "oembed_forbidden",
-    ]);
 
     for (const camera of cameras) {
       try {
@@ -50,18 +42,6 @@ export async function GET(request: NextRequest) {
         }
         summary.unavailableReasons[availability.reason] =
           (summary.unavailableReasons[availability.reason] ?? 0) + 1;
-
-        if (skipRefreshReasons.has(availability.reason)) {
-          await markUnavailable(camera.id);
-          summary.markedUnavailable++;
-          continue;
-        }
-
-        const result = await refreshCamera(camera);
-        if (result.updated) {
-          summary.refreshed++;
-          continue;
-        }
 
         await markUnavailable(camera.id);
         summary.markedUnavailable++;
