@@ -1,8 +1,9 @@
 import { getCameraById, type CameraRecord } from "@/lib/cameras";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { isCameraAvailable } from "@/lib/availability";
 import {
   calculateSimilarity,
-  fetchChannelLiveVideo,
+  fetchChannelLiveCandidates,
 } from "@/lib/youtube";
 
 export async function refreshCameraById(cameraId: string) {
@@ -18,50 +19,58 @@ export async function refreshCamera(camera: CameraRecord) {
     return { updated: false, reason: "missing-host" as const };
   }
 
-  const live = await fetchChannelLiveVideo(camera.hostLink);
-  if (!live) {
+  const candidates = await fetchChannelLiveCandidates(camera.hostLink);
+  if (!candidates.length) {
     return { updated: false, reason: "no-live" as const };
   }
 
-  const referenceTitle = camera.ytbTitle ?? camera.name ?? "";
-  const similarity = calculateSimilarity(referenceTitle, live.title ?? "");
-  if (similarity < 0.75) {
-    return {
-      updated: false,
-      reason: "low-similarity" as const,
-      similarity,
-    };
-  }
-
-  const newLink = `https://www.youtube.com/watch?v=${live.videoId}`;
   const currentVideoId = extractVideoId(camera.sourceUrl);
-  if (currentVideoId && currentVideoId === live.videoId) {
+  const referenceTitle = camera.ytbTitle ?? camera.name ?? "";
+
+  for (const live of candidates) {
+    if (!live.videoId) {
+      continue;
+    }
+    if (currentVideoId && currentVideoId === live.videoId) {
+      continue;
+    }
+
+    const playable = await isCameraAvailable(
+      buildCameraStub(live.videoId, live.title)
+    );
+    if (!playable.available) {
+      continue;
+    }
+
+    const similarity = calculateSimilarity(referenceTitle, live.title ?? "");
+    if (similarity < 0.75) {
+      continue;
+    }
+
+    const newLink = `https://www.youtube.com/watch?v=${live.videoId}`;
+
+    const { error } = await supabaseAdmin
+      .from("camera_ytb")
+      .update({
+        link: newLink,
+        ytb_title: live.title,
+        link_available: true,
+      })
+      .eq("camera_id", camera.id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const updatedCamera = await getCameraById(camera.id);
     return {
-      updated: false,
-      reason: "same-video" as const,
+      updated: Boolean(updatedCamera),
       similarity,
+      camera: updatedCamera ?? camera,
     };
   }
 
-  const { error } = await supabaseAdmin
-    .from("camera_ytb")
-    .update({
-      link: newLink,
-      ytb_title: live.title,
-      link_available: true,
-    })
-    .eq("camera_id", camera.id);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const updatedCamera = await getCameraById(camera.id);
-  return {
-    updated: Boolean(updatedCamera),
-    similarity,
-    camera: updatedCamera ?? camera,
-  };
+  return { updated: false, reason: "no-playable" as const };
 }
 
 function extractVideoId(sourceUrl: string | null | undefined) {
@@ -84,4 +93,24 @@ function extractVideoId(sourceUrl: string | null | undefined) {
     return null;
   }
   return null;
+}
+
+function buildCameraStub(videoId: string, title?: string | null): CameraRecord {
+  const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&playsinline=1`;
+  const sourceUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  return {
+    id: videoId,
+    name: title ?? videoId,
+    embedUrl,
+    sourceUrl,
+    lat: null,
+    lng: null,
+    timezone: null,
+    city: null,
+    country: null,
+    tags: [],
+    hostLink: null,
+    ytbTitle: title ?? null,
+    linkAvailable: true,
+  };
 }

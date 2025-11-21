@@ -21,8 +21,15 @@ function asRecordArray(value: unknown) {
 export async function fetchChannelLiveVideo(
   channelUrl: string
 ): Promise<LiveVideoInfo | null> {
+  const candidates = await fetchChannelLiveCandidates(channelUrl);
+  return candidates.length ? candidates[0] : null;
+}
+
+export async function fetchChannelLiveCandidates(
+  channelUrl: string
+): Promise<LiveVideoInfo[]> {
   if (!channelUrl) {
-    return null;
+    return [];
   }
 
   const normalized = channelUrl.endsWith("/")
@@ -42,32 +49,36 @@ export async function fetchChannelLiveVideo(
 
   if (!response.ok) {
     console.warn("[youtube] failed to load live page", response.status);
-    return null;
+    return [];
   }
 
   const html = await response.text();
+  const candidates: LiveVideoInfo[] = [];
+
   const playerResponse = extractJson(html, "ytInitialPlayerResponse");
   if (playerResponse) {
     const data = playerResponse as {
       videoDetails?: { videoId?: string; title?: string; isLiveContent?: boolean };
     };
     if (data.videoDetails?.isLiveContent && data.videoDetails.videoId) {
-      return {
+      candidates.push({
         videoId: data.videoDetails.videoId,
         title: data.videoDetails.title ?? "",
-      };
+      });
     }
   }
 
   const initialData = extractJson(html, "ytInitialData");
   if (initialData) {
-    const candidates = findLiveRenderer(initialData);
-    if (candidates.length) {
-      return candidates[0];
+    const liveBlocks = findLiveRenderer(initialData);
+    for (const item of liveBlocks) {
+      if (!candidates.find((candidate) => candidate.videoId === item.videoId)) {
+        candidates.push(item);
+      }
     }
   }
 
-  return null;
+  return candidates;
 }
 
 function extractJson(html: string, key: string) {
