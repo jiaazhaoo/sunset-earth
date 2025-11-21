@@ -34,6 +34,15 @@ export async function refreshCamera(camera: CameraRecord) {
   }
 
   const newLink = `https://www.youtube.com/watch?v=${live.videoId}`;
+  const currentVideoId = extractVideoId(camera.sourceUrl);
+  if (currentVideoId && currentVideoId === live.videoId) {
+    return {
+      updated: false,
+      reason: "same-video" as const,
+      similarity,
+    };
+  }
+
   const { error } = await supabaseAdmin
     .from("camera_ytb")
     .update({
@@ -53,4 +62,26 @@ export async function refreshCamera(camera: CameraRecord) {
     similarity,
     camera: updatedCamera ?? camera,
   };
+}
+
+function extractVideoId(sourceUrl: string | null | undefined) {
+  if (!sourceUrl) {
+    return null;
+  }
+  try {
+    const url = new URL(sourceUrl);
+    if (url.hostname === "youtu.be") {
+      return url.pathname.replace("/", "");
+    }
+    if (url.searchParams.has("v")) {
+      return url.searchParams.get("v");
+    }
+    const liveMatch = url.pathname.match(/\/live\/([\w-]+)/);
+    if (liveMatch) {
+      return liveMatch[1];
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
