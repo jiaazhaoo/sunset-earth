@@ -55,6 +55,13 @@ export async function GET(request: NextRequest) {
 
         // Treat playability_blocked as soft: do not disable, keep as available
         if (availability.reason === "playability_blocked") {
+          if (!camera.linkAvailable) {
+            await supabaseAdmin
+              .from("camera_ytb")
+              .update({ link_available: true })
+              .eq("camera_id", camera.id);
+            summary.markedAvailable++;
+          }
           summary.details.push({
             id: camera.id,
             status: "available",
