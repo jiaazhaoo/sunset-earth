@@ -53,20 +53,18 @@ export async function GET(request: NextRequest) {
         summary.unavailableReasons[availability.reason] =
           (summary.unavailableReasons[availability.reason] ?? 0) + 1;
 
-        // For soft failures like playability_blocked, retry with consent cookie before disabling
+        // Treat playability_blocked as soft: do not disable, keep as available
         if (availability.reason === "playability_blocked") {
-          const retry = await isCameraAvailable(camera, { withConsent: true });
-          if (retry.available) {
-            summary.details.push({
-              id: camera.id,
-              status: "available",
-            });
-            console.log(
-              "[refresh-links] playability_blocked recovered with consent",
-              camera.id
-            );
-            continue;
-          }
+          summary.details.push({
+            id: camera.id,
+            status: "available",
+            reason: "playability_blocked_soft",
+          });
+          console.log(
+            "[refresh-links] playability_blocked treated as available",
+            camera.id
+          );
+          continue;
         }
 
         await markUnavailable(camera.id);
