@@ -18,13 +18,18 @@ export type AvailabilityResult = {
   reason: AvailabilityReason;
 };
 
+export type AvailabilityOptions = {
+  withConsent?: boolean;
+};
+
 const availabilityCache = new Map<
   string,
   { result: AvailabilityResult; fetchedAt: number }
 >();
 
 export async function isCameraAvailable(
-  camera: CameraRecord
+  camera: CameraRecord,
+  options: AvailabilityOptions = {}
 ): Promise<AvailabilityResult> {
   if (!camera.embedUrl) {
     return { available: false, reason: "missing_embed" };
@@ -39,7 +44,7 @@ export async function isCameraAvailable(
   let result: AvailabilityResult = { available: true, reason: "ok" };
   try {
     if (isYoutubeUrl(key)) {
-      result = await checkYoutubeAvailability(key);
+      result = await checkYoutubeAvailability(key, options);
     }
   } catch (error) {
     console.warn("[availability] check failed", error);
@@ -54,7 +59,10 @@ function isYoutubeUrl(url: string) {
   return /youtu\.be|youtube\.com/.test(url);
 }
 
-async function checkYoutubeAvailability(url: string): Promise<AvailabilityResult> {
+async function checkYoutubeAvailability(
+  url: string,
+  options: AvailabilityOptions
+): Promise<AvailabilityResult> {
   const targetUrl = buildYoutubeEmbedUrl(url) ?? buildYoutubeWatchUrl(url);
   if (!targetUrl) {
     return { available: false, reason: "missing_embed" };
@@ -62,7 +70,7 @@ async function checkYoutubeAvailability(url: string): Promise<AvailabilityResult
 
   const watchProbe = buildYoutubeWatchUrl(url);
   if (watchProbe) {
-    const playable = await fetchPlayabilityStatus(watchProbe);
+    const playable = await fetchPlayabilityStatus(watchProbe, options);
     if (playable === "UNPLAYABLE") {
       return { available: false, reason: "unavailable_text" };
     }
@@ -73,7 +81,7 @@ async function checkYoutubeAvailability(url: string): Promise<AvailabilityResult
       )}`,
       {
         method: "GET",
-        headers: { "User-Agent": "SunsetEarth/1.0 availability" },
+        headers: buildHeaders(options.withConsent),
         cache: "no-store",
       }
     );
@@ -88,7 +96,7 @@ async function checkYoutubeAvailability(url: string): Promise<AvailabilityResult
 
   const response = await fetch(targetUrl, {
     method: "GET",
-    headers: { "User-Agent": "SunsetEarth/1.0 availability" },
+    headers: buildHeaders(options.withConsent),
     cache: "no-store",
     redirect: "follow",
   });
@@ -117,11 +125,14 @@ async function checkYoutubeAvailability(url: string): Promise<AvailabilityResult
   return { available: true, reason: "ok" };
 }
 
-async function fetchPlayabilityStatus(url: string) {
+async function fetchPlayabilityStatus(
+  url: string,
+  options: AvailabilityOptions
+) {
   try {
     const response = await fetch(url, {
       method: "GET",
-      headers: { "User-Agent": "SunsetEarth/1.0 availability" },
+      headers: buildHeaders(options.withConsent),
       cache: "no-store",
     });
     if (!response.ok) {
@@ -239,4 +250,14 @@ function copyPlaylistParams(
       target.set("index", index);
     }
   }
+}
+
+function buildHeaders(withConsent?: boolean) {
+  const headers: Record<string, string> = {
+    "User-Agent": "SunsetEarth/1.0 availability",
+  };
+  if (withConsent) {
+    headers["Cookie"] = "CONSENT=YES+cb";
+  }
+  return headers;
 }

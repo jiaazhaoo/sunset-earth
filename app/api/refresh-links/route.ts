@@ -53,6 +53,22 @@ export async function GET(request: NextRequest) {
         summary.unavailableReasons[availability.reason] =
           (summary.unavailableReasons[availability.reason] ?? 0) + 1;
 
+        // For soft failures like playability_blocked, retry with consent cookie before disabling
+        if (availability.reason === "playability_blocked") {
+          const retry = await isCameraAvailable(camera, { withConsent: true });
+          if (retry.available) {
+            summary.details.push({
+              id: camera.id,
+              status: "available",
+            });
+            console.log(
+              "[refresh-links] playability_blocked recovered with consent",
+              camera.id
+            );
+            continue;
+          }
+        }
+
         await markUnavailable(camera.id);
         summary.markedUnavailable++;
         summary.details.push({
@@ -60,7 +76,11 @@ export async function GET(request: NextRequest) {
           status: "unavailable",
           reason: availability.reason,
         });
-        console.log("[refresh-links] marked unavailable", camera.id, availability.reason);
+        console.log(
+          "[refresh-links] marked unavailable",
+          camera.id,
+          availability.reason
+        );
       } catch (error) {
         console.warn("[refresh-links] failed for camera", camera.id, error);
       }
