@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import tzLookup from "tz-lookup";
 
 const CAMERA_COLUMNS =
   "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available";
@@ -35,11 +36,11 @@ export type CameraRecord = {
   linkAvailable: boolean;
 };
 
-export async function listCameras(limit = 200) {
+export async function listCameras(limit = 200, offset = 0) {
   const { data, error } = await supabaseAdmin
     .from("camera_ytb")
     .select(CAMERA_COLUMNS)
-    .limit(limit);
+    .range(offset, offset + limit - 1);
 
   if (error) {
     throw new Error(error.message);
@@ -63,7 +64,9 @@ export async function getCameraById(cameraId: string) {
 }
 
 export async function getRandomCamera() {
-  const pool = await listCameras(50);
+  const pool = (await listCameras(200)).filter(
+    (camera) => camera.linkAvailable !== false
+  );
   if (!pool.length) {
     return null;
   }
@@ -72,6 +75,9 @@ export async function getRandomCamera() {
 }
 
 function mapCameraRow(row: CameraRow): CameraRecord {
+  const lat = toNumber(row.latitude);
+  const lng = toNumber(row.longitude);
+  const timezone = resolveTimezone(row.timezone, lat, lng);
   return {
     id: String(row.camera_id),
     name:
@@ -82,9 +88,9 @@ function mapCameraRow(row: CameraRow): CameraRecord {
         : `Camera ${row.camera_id}`),
     embedUrl: buildEmbedUrl(row.link),
     sourceUrl: row.link ?? null,
-    lat: toNumber(row.latitude),
-    lng: toNumber(row.longitude),
-    timezone: row.timezone || null,
+    lat,
+    lng,
+    timezone,
     city: row.city || null,
     country: row.country || null,
     tags: parseTags(row.tag),
@@ -92,6 +98,30 @@ function mapCameraRow(row: CameraRow): CameraRecord {
     ytbTitle: row.ytb_title ?? null,
     linkAvailable: row.link_available ?? true,
   };
+}
+
+function resolveTimezone(
+  value: string | null,
+  lat: number | null,
+  lng: number | null
+) {
+  if (value) {
+    return value;
+  }
+  if (lat === null || lng === null) {
+    return null;
+  }
+  try {
+    return tzLookup(lat, lng);
+  } catch (error) {
+    console.warn(
+      "Failed to resolve timezone from coordinates",
+      lat,
+      lng,
+      error
+    );
+    return null;
+  }
 }
 
 function parseTags(value: string | null) {

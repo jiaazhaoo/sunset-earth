@@ -4,11 +4,14 @@ import {
   getRandomCamera,
   listCameras,
 } from "@/lib/cameras";
+import type { CameraRecord } from "@/lib/cameras";
 import { fetchWeatherSnapshot, scoreCameraWeather } from "@/lib/weather";
+import type { CameraEvaluation } from "@/lib/weather";
 import { isCameraAvailable } from "@/lib/availability";
 
 export async function GET(request: NextRequest) {
   try {
+    const now = new Date();
     const cameraId = request.nextUrl.searchParams.get("cameraId");
     const excludeParam = request.nextUrl.searchParams.get("exclude") ?? "";
     const excludeSet = new Set(
@@ -26,10 +29,15 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         );
       }
-      return NextResponse.json({ camera, rotationReset: false });
+      const entry = await buildCameraEntry(camera, now);
+      return NextResponse.json({
+        camera,
+        meta: entry ? buildMeta(entry) : null,
+        rotationReset: false,
+      });
     }
 
-    const best = await findBestCamera(excludeSet);
+    const best = await findBestCamera(excludeSet, now);
     if (!best) {
       return NextResponse.json(
         { error: "No cameras available" },
@@ -47,61 +55,28 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function findBestCamera(exclude: Set<string>) {
-  const now = new Date();
-  const cameras = await listCameras(120);
-  const candidates = await Promise.all(
-    cameras.map(async (camera) => {
-      if (camera.lat === null || camera.lng === null) {
-        return null;
-      }
+const CAMERA_FETCH_BATCH = 5;
 
-      if (camera.linkAvailable === false) {
-        return null;
-      }
+async function findBestCamera(exclude: Set<string>, now: Date) {
+  const candidates: CameraEntry[] = [];
+  let offset = 0;
 
-      const availability = await isCameraAvailable(camera);
-      if (!availability.available) {
-        return null;
-      }
+  while (true) {
+    const batch = await listCameras(CAMERA_FETCH_BATCH, offset);
+    if (!batch.length) {
+      break;
+    }
+    offset += batch.length;
 
-      try {
-        const weather = await fetchWeatherSnapshot(camera.lat, camera.lng);
-        let evaluation = scoreCameraWeather(weather, now);
-        const hasCitySkyline = camera.tags?.some((tag) =>
-          tag.toLowerCase().includes("city skyline")
-        );
-        if (
-          hasCitySkyline &&
-          (evaluation.score <= 40 ||
-            !evaluation.label ||
-            evaluation.label === "clear")
-        ) {
-          evaluation = {
-            ...evaluation,
-            score: 50,
-            label: "city-skyline",
-          };
-        }
-
-        return {
-          camera,
-          evaluation,
-          weatherSnapshot: {
-            sunrise: weather.daily?.sunrise?.[0],
-            sunset: weather.daily?.sunset?.[0],
-            timezone: weather.timezone,
-          },
-        };
-      } catch (error) {
-        console.warn(
-          `[api/best-camera] weather failed for camera ${camera.id}`,
-          error
-        );
-        return null;
+    const results = await Promise.all(
+      batch.map((camera) => buildCameraEntry(camera, now))
+    );
+    for (const entry of results) {
+      if (entry) {
+        candidates.push(entry);
       }
-    })
-  );
+    }
+  }
 
   const scored = candidates
     .filter((entry): entry is typeof entry => entry !== null)
@@ -130,14 +105,7 @@ async function findBestCamera(exclude: Set<string>) {
   if (candidate) {
     return {
       camera: candidate.camera,
-      meta: {
-        label: candidate.evaluation.label,
-        isClear: candidate.evaluation.isClear,
-        distanceMinutes: candidate.evaluation.distanceMinutes,
-        timezone: candidate.weatherSnapshot.timezone,
-        sunrise: candidate.weatherSnapshot.sunrise,
-        sunset: candidate.weatherSnapshot.sunset,
-      },
+      meta: buildMeta(candidate),
       rotationReset: false,
     };
   }
@@ -152,14 +120,77 @@ async function findBestCamera(exclude: Set<string>) {
 
   return {
     camera: best.camera,
-    meta: {
-      label: best.evaluation.label,
-      isClear: best.evaluation.isClear,
-      distanceMinutes: best.evaluation.distanceMinutes,
-      timezone: best.weatherSnapshot.timezone,
-      sunrise: best.weatherSnapshot.sunrise,
-      sunset: best.weatherSnapshot.sunset,
-    },
+    meta: buildMeta(best),
     rotationReset: true,
+  };
+}
+
+type CameraEntry = {
+  camera: CameraRecord;
+  evaluation: CameraEvaluation;
+  weatherSnapshot: {
+    sunrise?: string;
+    sunset?: string;
+    timezone?: string;
+  };
+};
+
+async function buildCameraEntry(
+  camera: CameraRecord,
+  now: Date
+): Promise<CameraEntry | null> {
+  if (camera.lat === null || camera.lng === null) {
+    return null;
+  }
+  if (camera.linkAvailable === false) {
+    return null;
+  }
+
+  const availability = await isCameraAvailable(camera);
+  if (!availability.available) {
+    return null;
+  }
+
+  try {
+    const weather = await fetchWeatherSnapshot(camera.lat, camera.lng, camera.id);
+    const hasCitySkyline = camera.tags?.some((tag) =>
+      tag.toLowerCase().includes("city skyline")
+    );
+    const evaluation = scoreCameraWeather(weather, now, { hasCitySkyline });
+    return {
+      camera,
+      evaluation,
+      weatherSnapshot: {
+        sunrise: weather.daily?.sunrise?.[0],
+        sunset: weather.daily?.sunset?.[0],
+        timezone: weather.timezone,
+      },
+    };
+  } catch (error) {
+    console.warn(
+      `[api/best-camera] weather failed for camera ${camera.id}`,
+      error
+    );
+    return null;
+  }
+}
+
+function buildMeta(entry: CameraEntry) {
+  return {
+    cameraId: entry.camera.id,
+    score: entry.evaluation.score,
+    label: entry.evaluation.label,
+    isClear: entry.evaluation.isClear,
+    distanceMinutes: entry.evaluation.distanceMinutes,
+    weatherClass: entry.evaluation.weatherClass,
+    timezone: entry.weatherSnapshot.timezone,
+    sunrise: entry.weatherSnapshot.sunrise,
+    sunset: entry.weatherSnapshot.sunset,
+    nextEvent: entry.evaluation.nextEvent
+      ? {
+          type: entry.evaluation.nextEvent.type,
+          timeISO: entry.evaluation.nextEvent.time.toISOString(),
+        }
+      : null,
   };
 }

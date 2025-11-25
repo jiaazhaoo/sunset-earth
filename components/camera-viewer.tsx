@@ -9,17 +9,27 @@ type Props = {
 
 const STORAGE_KEY = "sunset-earth-seen";
 const UNAVAILABLE_KEY = "sunset-earth-unavailable";
-const REFRESH_KEY = "sunset-earth-refresh-attempts";
-const REFRESH_COOLDOWN = 3 * 60 * 60 * 1000;
+
+type CameraMeta = {
+  cameraId: string;
+  score: number;
+  label?: string;
+  isClear?: boolean;
+  distanceMinutes?: number;
+  weatherClass?: string;
+  timezone?: string | null;
+  sunrise?: string;
+  sunset?: string;
+  nextEvent?: {
+    type: "sunrise" | "sunset";
+    timeISO: string;
+  } | null;
+};
 
 type BestCameraResponse = {
   camera: CameraRecord;
   rotationReset?: boolean;
-};
-
-type RefreshResponse = {
-  camera?: CameraRecord;
-  updated?: boolean;
+  meta?: CameraMeta | null;
 };
 
 function VideoFrame({
@@ -81,12 +91,12 @@ function VideoFrame({
 
 export function CameraViewer({ initialCamera }: Props) {
   const [camera, setCamera] = useState<CameraRecord | null>(initialCamera);
+  const [cameraMeta, setCameraMeta] = useState<CameraMeta | null>(null);
+  const [localTime, setLocalTime] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
   const [seen, setSeen] = useState<string[]>([]);
   const [blacklist, setBlacklist] = useState<string[]>([]);
-  const [refreshAttempts, setRefreshAttempts] = useState<Record<string, number>>({});
-  const failureHandlerRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -104,23 +114,6 @@ export function CameraViewer({ initialCamera }: Props) {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(UNAVAILABLE_KEY, JSON.stringify(blacklist));
   }, [blacklist]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(REFRESH_KEY);
-      if (stored) {
-        setRefreshAttempts(JSON.parse(stored));
-      }
-    } catch {
-      setRefreshAttempts({});
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(REFRESH_KEY, JSON.stringify(refreshAttempts));
-  }, [refreshAttempts]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -179,6 +172,7 @@ export function CameraViewer({ initialCamera }: Props) {
         );
       }
       setCamera(payload.camera);
+      setCameraMeta(payload.meta ?? null);
     } catch {
       setError("切换摄像头失败，请稍后再试。");
     } finally {
@@ -186,96 +180,63 @@ export function CameraViewer({ initialCamera }: Props) {
     }
   };
 
-  const attemptRefresh = async (cam: CameraRecord | null) => {
-    if (!cam?.id) {
-      return false;
-    }
-    const now = Date.now();
-    const last = refreshAttempts[cam.id];
-    if (last && now - last < REFRESH_COOLDOWN) {
-      return false;
-    }
-    setRefreshAttempts((prev) => ({ ...prev, [cam.id]: now }));
-    try {
-      const response = await fetch("/api/refresh-camera", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cameraId: cam.id }),
-      });
-      if (!response.ok) {
-        return false;
-      }
-      const payload = (await response.json()) as RefreshResponse;
-      if (payload.camera) {
-        setCamera(payload.camera);
-        setBlacklist((prev) => prev.filter((id) => id !== cam.id));
-        if (cam.id) {
-          updateAvailability(cam.id, true).catch(() => undefined);
-        }
-        return true;
-      }
-    } catch (err) {
-      console.warn("refresh camera failed", err);
-    }
-    return false;
-  };
-
   const handleStreamFailure = async () => {
-    if (!camera) {
-      handleSwitch().catch(() => undefined);
-      return;
-    }
-    const recovered = await attemptRefresh(camera);
-    if (recovered) {
-      return;
-    }
-    if (camera.id) {
-      setBlacklist((prev) =>
-        prev.includes(camera.id) ? prev : [...prev, camera.id]
-      );
-      updateAvailability(camera.id, false).catch(() => undefined);
-    }
-    handleSwitch().catch(() => undefined);
+    console.warn("Camera stream reported a failure.");
   };
-
-  failureHandlerRef.current = handleStreamFailure;
 
   useEffect(() => {
-    if (!camera?.embedUrl) {
+    if (!camera?.id) {
+      setCameraMeta(null);
+      return;
+    }
+    if (cameraMeta?.cameraId === camera.id) {
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch("/api/check-camera", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            camera: {
-              embedUrl: camera.embedUrl,
-              sourceUrl: camera.sourceUrl,
-            },
-          }),
+        const response = await fetch(`/api/best-camera?cameraId=${camera.id}`, {
+          cache: "no-store",
         });
-        if (!response.ok) {
+        if (!response.ok || cancelled) {
           return;
         }
-        const { available, reason } = (await response.json()) as {
-          available: boolean;
-          reason?: string;
-        };
-        if (!available && !cancelled) {
-          console.warn("camera preflight failed", reason);
-          failureHandlerRef.current();
+        const payload = (await response.json()) as BestCameraResponse;
+        if (!cancelled) {
+          setCameraMeta(payload.meta ?? null);
         }
       } catch (err) {
-        console.warn("camera availability probe failed", err);
+        console.warn("fetch camera meta failed", err);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [camera?.embedUrl, camera?.sourceUrl, camera?.id]);
+  }, [camera?.id, cameraMeta?.cameraId]);
+
+  const activeTimezone =
+    camera?.timezone ?? cameraMeta?.timezone ?? null;
+
+  useEffect(() => {
+    if (!activeTimezone) {
+      setLocalTime("未知");
+      return;
+    }
+    const formatter = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: activeTimezone,
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const update = () => {
+      const utcNow = new Date(Date.now());
+      setLocalTime(formatter.format(utcNow));
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [activeTimezone]);
 
   return (
     <section className="flex w-full flex-col gap-8">
@@ -301,13 +262,27 @@ export function CameraViewer({ initialCamera }: Props) {
             {[camera?.city, camera?.country].filter(Boolean).join(" · ") ||
               "等待加载位置..."}
           </p>
+          {camera?.tags?.length ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {camera.tags.map((tag) => (
+                <span
+                  key={`${camera.id}-${tag}`}
+                  className="rounded-full border border-orange-100 bg-orange-50 px-2 py-0.5 text-xs text-orange-600"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
 
-        {error && (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
-            {error}
-          </p>
-        )}
+        <CameraMetaPanel
+          meta={cameraMeta}
+          localTime={localTime}
+          tags={camera?.tags ?? []}
+          timezone={activeTimezone}
+          nextEvent={cameraMeta?.nextEvent ?? null}
+        />
 
         <CameraActions
           cameraId={camera?.id ?? null}
@@ -315,8 +290,159 @@ export function CameraViewer({ initialCamera }: Props) {
           onSwitchClick={handleSwitch}
         />
       </div>
+
     </section>
   );
+}
+
+function CameraMetaPanel({
+  meta,
+  localTime,
+  tags,
+  timezone,
+  nextEvent,
+}: {
+  meta: CameraMeta | null;
+  localTime: string;
+  tags: string[];
+  timezone: string | null;
+  nextEvent: CameraMeta["nextEvent"] | null;
+}) {
+  const weatherText = meta
+    ? describeWeather(meta?.weatherClass)
+    : { title: "等待天气数据", subtitle: "正在刷新最新情况" };
+  const timeWindow = describeTimeWindow(meta?.label);
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
+      <div className="grid gap-4 sm:grid-cols-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
+            优先级得分
+          </p>
+          <p className="text-2xl font-semibold text-zinc-900">
+            {meta ? meta.score : "--"}
+          </p>
+          <p className="text-xs text-zinc-500">{timeWindow}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
+            天气状态
+          </p>
+          <p className="text-lg font-semibold text-zinc-900">
+            {weatherText.title}
+          </p>
+          <p className="text-xs text-zinc-500">{weatherText.subtitle}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
+            最近日出/日落
+          </p>
+          <p className="text-lg font-semibold text-zinc-900">
+            {describeEventTitle(nextEvent)}
+          </p>
+          <p className="text-xs text-zinc-500">
+            {describeEventTime(nextEvent, timezone)}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
+            当地时间
+          </p>
+          <p className="text-lg font-semibold text-zinc-900">
+            {localTime || "--"}
+          </p>
+          <p className="text-xs text-zinc-500">
+            {timezone ? `时区 ${timezone}` : "无时区信息"}
+          </p>
+        </div>
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
+          标签
+        </p>
+        {tags.length ? (
+          <div className="mt-1 flex flex-wrap gap-2">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-orange-100 bg-orange-50 px-2 py-0.5 text-xs text-orange-600"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-500">暂无标签</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function describeWeather(weatherClass?: string | null) {
+  switch (weatherClass) {
+    case "clear":
+      return { title: "晴朗", subtitle: "天空通透，色彩最佳" };
+    case "partly-cloudy":
+      return { title: "局部多云", subtitle: "有云层，但仍可能有霞光" };
+    case "light-snow":
+      return { title: "轻微降雪", subtitle: "雪花增添独特氛围" };
+    case "other":
+    default:
+      return { title: "多云或降水", subtitle: "可能影响日落观感" };
+  }
+}
+
+function describeTimeWindow(label?: string | null) {
+  switch (label) {
+    case "sunset-primary":
+      return "黄金日落时段";
+    case "sunrise-primary":
+      return "黄金日出时段";
+    case "sunset-extended":
+      return "日落延伸时段";
+    case "sunrise-extended":
+      return "日出延伸时段";
+    case "clear-day":
+      return "白天晴朗";
+    case "city-skyline-night":
+      return "城市夜景晴朗";
+    case "night":
+    default:
+      return "夜间或阴天";
+  }
+}
+
+function describeEventTitle(
+  nextEvent: CameraMeta["nextEvent"] | null
+) {
+  if (!nextEvent) {
+    return "等待数据";
+  }
+  return nextEvent.type === "sunrise" ? "日出" : "日落";
+}
+
+function describeEventTime(
+  nextEvent: CameraMeta["nextEvent"] | null,
+  timezone: string | null
+) {
+  if (!nextEvent || !timezone) {
+    return "暂无";
+  }
+  try {
+    const formatter = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      weekday: "short",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    return formatter.format(new Date(nextEvent.timeISO));
+  } catch {
+    return "时间格式错误";
+  }
 }
 
 function CameraActions({
@@ -329,16 +455,16 @@ function CameraActions({
   onSwitchClick: () => void;
 }) {
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const handleCreateRoom = async () => {
     if (!cameraId) {
-      setError("当前没有可用摄像头");
+      setActionError("当前没有可用摄像头");
       return;
     }
 
     setCreating(true);
-    setError(null);
+    setActionError(null);
     try {
       const response = await fetch("/api/create-room", {
         method: "POST",
@@ -353,7 +479,7 @@ function CameraActions({
       const data = (await response.json()) as { roomId: string };
       window.location.href = `/room/${data.roomId}?camera=${cameraId}`;
     } catch {
-      setError("创建房间失败，请稍后再试");
+      setActionError("创建房间失败，请稍后再试");
     } finally {
       setCreating(false);
     }
@@ -375,22 +501,11 @@ function CameraActions({
       >
         {creating ? "创建房间中…" : "邀请朋友一起看"}
       </button>
-      {error && (
+      {actionError && (
         <p className="text-sm text-red-500" role="alert">
-          {error}
+          {actionError}
         </p>
       )}
     </div>
   );
-}
-async function updateAvailability(cameraId: string, available: boolean) {
-  try {
-    await fetch("/api/camera-availability", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cameraId, available }),
-    });
-  } catch (error) {
-    console.warn("update availability failed", error);
-  }
 }

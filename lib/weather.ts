@@ -1,3 +1,5 @@
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+
 const OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -9,11 +11,16 @@ type OpenMeteoResponse = {
   current_weather?: {
     time: string;
     weathercode: number;
+    is_day?: number;
   };
   hourly?: {
     time: string[];
     weathercode: number[];
     cloudcover: number[];
+    relativehumidity_2m: number[];
+    visibility: number[];
+    precipitation: number[];
+    snowfall: number[];
   };
   daily?: {
     time: string[];
@@ -32,32 +39,72 @@ type CameraWindowLabel =
   | "sunrise-primary"
   | "sunset-extended"
   | "sunrise-extended"
-  | "city-skyline"
-  | "clear";
+  | "city-skyline-night"
+  | "clear"
+  | "clear-day"
+  | "night";
 
 export type CameraEvaluation = {
   score: number;
   label?: CameraWindowLabel;
   distanceMinutes?: number;
   isClear: boolean;
+  isDaytime?: boolean | null;
+  weatherClass?: WeatherClass;
+  nextEvent?: SolarEvent | null;
 };
 
 const weatherCache = new Map<string, CachedEntry>();
-const CLEAR_WEATHER_CODES = new Set([0, 1, 2]);
+const MINUTE = 60 * 1000;
+
+type WeatherClass = "clear" | "partly-cloudy" | "light-snow" | "other";
+
+const WEATHER_WEIGHTS: Record<WeatherClass, number> = {
+  clear: 1,
+  "partly-cloudy": 0.4,
+  "light-snow": 0.7,
+  other: 0.4,
+};
+
+const METRIC_LIMITS = {
+  visibility: 20000,
+  humidity: 100,
+  precipitation: 2,
+  snowfall: 1,
+  cloudcover: 100,
+} as const;
+
+const WEATHER_CACHE_TABLE = "camera_weather_cache";
+const WEATHER_HISTORY_TABLE = "camera_weather_history";
+const SUN_CACHE_TABLE = "camera_sun_cache";
+const SUN_HISTORY_TABLE = "camera_sun_history";
 
 export async function fetchWeatherSnapshot(
   lat: number,
-  lng: number
+  lng: number,
+  cacheSlug?: string
 ): Promise<OpenMeteoResponse> {
-  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const key = cacheSlug ?? `${lat.toFixed(4)},${lng.toFixed(4)}`;
   const now = Date.now();
   const cached = weatherCache.get(key);
   if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.data;
   }
 
-  // serve stale while revalidating
-  if (cached && now - cached.fetchedAt < CACHE_TTL_MS * 2) {
+  const persistent = await loadWeatherCache(key);
+  if (persistent) {
+    weatherCache.set(key, persistent);
+    const age = now - persistent.fetchedAt;
+    if (age < CACHE_TTL_MS) {
+      return persistent.data;
+    }
+    if (age < CACHE_TTL_MS * 2) {
+      refreshWeatherSnapshot(key, lat, lng).catch((error) => {
+        console.warn("[weather] background refresh failed", error);
+      });
+      return persistent.data;
+    }
+  } else if (cached && now - cached.fetchedAt < CACHE_TTL_MS * 2) {
     refreshWeatherSnapshot(key, lat, lng).catch((error) => {
       console.warn("[weather] background refresh failed", error);
     });
@@ -75,7 +122,8 @@ async function refreshWeatherSnapshot(
   const params = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lng),
-    hourly: "weathercode,cloudcover",
+    hourly:
+      "weathercode,cloudcover,relativehumidity_2m,visibility,precipitation,snowfall",
     daily: "sunrise,sunset",
     timezone: "UTC",
     forecast_days: "2",
@@ -103,7 +151,17 @@ async function refreshWeatherSnapshot(
       }
 
       const data = (await response.json()) as OpenMeteoResponse;
-      weatherCache.set(key, { fetchedAt: Date.now(), data });
+      const entry = { fetchedAt: Date.now(), data };
+      weatherCache.set(key, entry);
+      persistWeatherCache(key, lat, lng, data).catch((error) => {
+        console.warn("[weather] failed to persist cache", error);
+      });
+      persistWeatherHistory(key, lat, lng, data).catch((error) => {
+        console.warn("[weather] failed to persist history", error);
+      });
+      persistSunData(key, lat, lng, data).catch((error) => {
+        console.warn("[weather] failed to persist sun data", error);
+      });
       return data;
     } catch (error) {
       if (attempt === 0) {
@@ -121,80 +179,374 @@ async function refreshWeatherSnapshot(
   throw new Error("Open-Meteo failed");
 }
 
+type ScoreOptions = {
+  hasCitySkyline?: boolean;
+};
+
+type SolarEvent = {
+  type: "sunrise" | "sunset";
+  time: Date;
+};
+
 export function scoreCameraWeather(
   weather: OpenMeteoResponse,
-  now: Date
+  now: Date,
+  options: ScoreOptions = {}
 ): CameraEvaluation {
   const nowMs = now.getTime();
   const sunrise = pickClosestTime(weather.daily?.sunrise, nowMs);
   const sunset = pickClosestTime(weather.daily?.sunset, nowMs);
+  const isDaytime = determineDaytime(weather, now);
+  const hourIndex = getHourlyIndex(weather, now);
 
-  const isClear = determineClearSky(weather, now);
+  const weatherCode =
+    getHourlyValue(weather.hourly?.weathercode, hourIndex) ??
+    weather.current_weather?.weathercode ??
+    null;
+  const cloudcover = getHourlyValue(weather.hourly?.cloudcover, hourIndex);
+  const humidity = getHourlyValue(
+    weather.hourly?.relativehumidity_2m,
+    hourIndex
+  );
+  const visibility = getHourlyValue(weather.hourly?.visibility, hourIndex);
+  const precipitation = getHourlyValue(
+    weather.hourly?.precipitation,
+    hourIndex
+  );
+  const snowfall = getHourlyValue(weather.hourly?.snowfall, hourIndex);
 
-  if (!sunrise && !sunset) {
-    return {
-      score: isClear ? 20 : 0,
-      label: isClear ? "clear" : undefined,
-      isClear,
-    };
-  }
+  const weatherClass = classifyWeather(weatherCode);
+  const isClear = weatherClass === "clear";
 
-  const windows = buildWindows({ sunrise, sunset, isClear });
-  for (const window of windows) {
-    if (!window.startMs || !window.endMs) {
-      if (window.label === "clear" && isClear) {
-        return {
-          score: window.score,
-          label: window.label,
-          distanceMinutes: 999,
-          isClear,
-        };
-      }
-      continue;
-    }
-    if (nowMs >= window.startMs && nowMs <= window.endMs && isClear) {
-      const center = (window.startMs + window.endMs) / 2;
-      return {
-        score: window.score,
-        label: window.label,
-        distanceMinutes: Math.abs(nowMs - center) / 60000,
-        isClear,
-      };
-    }
-  }
+  const timeTier = resolveTimeTier({
+    sunrise,
+    sunset,
+    nowMs,
+    isDaytime,
+    isClear,
+    hasCitySkyline: options.hasCitySkyline ?? false,
+  });
 
-  return { score: isClear ? 30 : 0, label: isClear ? "clear" : undefined, isClear };
-}
+  const qualityScore = buildQualityScore({
+    visibility,
+    humidity,
+    precipitation,
+    snowfall,
+    cloudcover,
+  });
 
-function determineClearSky(
-  weather: OpenMeteoResponse,
-  now: Date
-): boolean {
-  const hourIso = isoHourString(now);
-  const hourlyTimes = weather.hourly?.time ?? [];
-  const index = hourlyTimes.indexOf(hourIso);
+  const timeWeights: Record<number, number> = {
+    1: 100,
+    2: 85,
+    3: 65,
+    4: 45,
+    5: 20,
+  };
 
-  const code =
-    index >= 0
-      ? weather.hourly?.weathercode?.[index]
-      : weather.current_weather?.weathercode;
-  if (code !== undefined) {
-    return CLEAR_WEATHER_CODES.has(code);
-  }
+  const weatherWeight = WEATHER_WEIGHTS[weatherClass];
+  const baseScore = timeWeights[timeTier.tier] ?? 0;
+  const adjustedQuality = 0.4 + 0.6 * qualityScore;
+  const score = Math.round(baseScore * weatherWeight * adjustedQuality);
+  const nextEvent = findNextSolarEvent(weather, now);
 
-  const cloudCover =
-    index >= 0 ? weather.hourly?.cloudcover?.[index] : undefined;
-  if (typeof cloudCover === "number") {
-    return cloudCover <= 40;
-  }
-
-  return false;
+  return {
+    score,
+    label: timeTier.label,
+    distanceMinutes: timeTier.distanceMinutes,
+    isClear,
+    isDaytime,
+    weatherClass,
+    nextEvent,
+  };
 }
 
 function isoHourString(date: Date) {
   const clone = new Date(date);
   clone.setMinutes(0, 0, 0);
   return clone.toISOString().slice(0, 13) + ":00";
+}
+
+function getHourlyIndex(weather: OpenMeteoResponse, now: Date) {
+  const hourIso = isoHourString(now);
+  const hourlyTimes = weather.hourly?.time ?? [];
+  const index = hourlyTimes.indexOf(hourIso);
+  return index >= 0 ? index : null;
+}
+
+function getHourlyValue(
+  values: number[] | undefined,
+  index: number | null
+): number | undefined {
+  if (index === null || !values || index < 0 || index >= values.length) {
+    return undefined;
+  }
+  return values[index];
+}
+
+function classifyWeather(code: number | null): WeatherClass {
+  if (code === 0 || code === 1) {
+    return "clear";
+  }
+  if (code === 2) {
+    return "partly-cloudy";
+  }
+  if (code === 71 || code === 85) {
+    return "light-snow";
+  }
+  return "other";
+}
+
+type TimeTierResult = {
+  tier: number;
+  label: CameraWindowLabel;
+  distanceMinutes?: number;
+};
+
+function resolveTimeTier({
+  sunrise,
+  sunset,
+  nowMs,
+  isDaytime,
+  isClear,
+  hasCitySkyline,
+}: {
+  sunrise: Date | null;
+  sunset: Date | null;
+  nowMs: number;
+  isDaytime: boolean | null;
+  isClear: boolean;
+  hasCitySkyline: boolean;
+}): TimeTierResult {
+  const windows = buildWindows({ sunrise, sunset });
+  const primary = findMatchingWindow(windows, nowMs, 1);
+  if (primary) {
+    return primary;
+  }
+  const extended = findMatchingWindow(windows, nowMs, 2);
+  if (extended) {
+    return extended;
+  }
+
+  if (isDaytime) {
+    return { tier: 3, label: "clear-day", distanceMinutes: 999 };
+  }
+
+  if (!isDaytime && hasCitySkyline && isClear) {
+    return { tier: 4, label: "city-skyline-night", distanceMinutes: 999 };
+  }
+
+  return { tier: 5, label: "night", distanceMinutes: 999 };
+}
+
+function findMatchingWindow(
+  windows: WindowDefinition[],
+  nowMs: number,
+  priority: number
+): TimeTierResult | null {
+  const target = windows.find(
+    (window) =>
+      window.priority === priority &&
+      window.startMs !== undefined &&
+      window.endMs !== undefined &&
+      nowMs >= window.startMs &&
+      nowMs <= window.endMs
+  );
+  if (!target || !target.startMs || !target.endMs) {
+    return null;
+  }
+  const center = (target.startMs + target.endMs) / 2;
+  return {
+    tier: priority,
+    label: target.label,
+    distanceMinutes: Math.abs(nowMs - center) / MINUTE,
+  };
+}
+
+type QualityInputs = {
+  visibility?: number;
+  humidity?: number;
+  precipitation?: number;
+  snowfall?: number;
+  cloudcover?: number;
+};
+
+function buildQualityScore(inputs: QualityInputs): number {
+  const factors: number[] = [];
+  const visScore = normalizePositive(
+    inputs.visibility,
+    METRIC_LIMITS.visibility
+  );
+  if (visScore !== null) {
+    factors.push(visScore);
+  }
+
+  const humidityScore = normalizeNegative(
+    inputs.humidity,
+    METRIC_LIMITS.humidity
+  );
+  if (humidityScore !== null) {
+    factors.push(humidityScore);
+  }
+
+  const precipScore = normalizeNegative(
+    inputs.precipitation,
+    METRIC_LIMITS.precipitation
+  );
+  if (precipScore !== null) {
+    factors.push(precipScore);
+  }
+
+  const snowScore = normalizeNegative(
+    inputs.snowfall,
+    METRIC_LIMITS.snowfall
+  );
+  if (snowScore !== null) {
+    factors.push(snowScore);
+  }
+
+  const cloudScore = normalizeNegative(
+    inputs.cloudcover,
+    METRIC_LIMITS.cloudcover
+  );
+  if (cloudScore !== null) {
+    factors.push(cloudScore);
+  }
+
+  if (!factors.length) {
+    return 0.5;
+  }
+  const sum = factors.reduce((total, value) => total + value, 0);
+  return sum / factors.length;
+}
+
+function normalizePositive(value: number | undefined, max: number) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  return clamp01(value / max);
+}
+
+function normalizeNegative(value: number | undefined, max: number) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  return clamp01(1 - value / max);
+}
+
+function clamp01(value: number) {
+  if (Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+async function loadWeatherCache(key: string): Promise<CachedEntry | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from(WEATHER_CACHE_TABLE)
+      .select("data,fetched_at")
+      .eq("camera_id", key)
+      .maybeSingle();
+    if (error || !data) {
+      return null;
+    }
+    const fetchedAt = new Date(data.fetched_at).getTime();
+    return {
+      fetchedAt,
+      data: data.data as OpenMeteoResponse,
+    };
+  } catch (error) {
+    console.warn("[weather] load cache failed", error);
+    return null;
+  }
+}
+
+async function persistWeatherCache(
+  key: string,
+  lat: number,
+  lng: number,
+  data: OpenMeteoResponse
+) {
+  try {
+    await supabaseAdmin.from(WEATHER_CACHE_TABLE).upsert(
+      {
+        camera_id: key,
+        lat,
+        lng,
+        data,
+        fetched_at: new Date().toISOString(),
+      },
+      { onConflict: "camera_id" }
+    );
+  } catch (error) {
+    console.warn("[weather] persist cache failed", error);
+  }
+}
+
+async function persistWeatherHistory(
+  key: string,
+  lat: number,
+  lng: number,
+  data: OpenMeteoResponse
+) {
+  try {
+    await supabaseAdmin.from(WEATHER_HISTORY_TABLE).insert({
+      camera_id: key,
+      lat,
+      lng,
+      data,
+      fetched_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn("[weather] persist history failed", error);
+  }
+}
+
+async function persistSunData(
+  key: string,
+  lat: number,
+  lng: number,
+  data: OpenMeteoResponse
+) {
+  const sunriseValue = data.daily?.sunrise?.[0] ?? null;
+  const sunsetValue = data.daily?.sunset?.[0] ?? null;
+  const payload = {
+    sunrise: data.daily?.sunrise ?? [],
+    sunset: data.daily?.sunset ?? [],
+  };
+  try {
+    await supabaseAdmin.from(SUN_CACHE_TABLE).upsert(
+      {
+        camera_id: key,
+        lat,
+        lng,
+        sunrise: sunriseValue ? toIsoDate(sunriseValue) : null,
+        sunset: sunsetValue ? toIsoDate(sunsetValue) : null,
+        data: payload,
+        fetched_at: new Date().toISOString(),
+      },
+      { onConflict: "camera_id" }
+    );
+  } catch (error) {
+    console.warn("[weather] persist sun cache failed", error);
+  }
+
+  try {
+    await supabaseAdmin.from(SUN_HISTORY_TABLE).insert({
+      camera_id: key,
+      lat,
+      lng,
+      sunrise: sunriseValue ? toIsoDate(sunriseValue) : null,
+      sunset: sunsetValue ? toIsoDate(sunsetValue) : null,
+      data: payload,
+      fetched_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn("[weather] persist sun history failed", error);
+  }
+}
+
+function toIsoDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function pickClosestTime(times: string[] | undefined, targetMs: number) {
@@ -226,6 +578,7 @@ function parseUtcDate(value: string | undefined | null) {
 type WindowDefinition = {
   label: CameraWindowLabel;
   score: number;
+  priority: number;
   startMs?: number;
   endMs?: number;
 };
@@ -233,11 +586,9 @@ type WindowDefinition = {
 function buildWindows({
   sunrise,
   sunset,
-  isClear,
 }: {
   sunrise: Date | null;
   sunset: Date | null;
-  isClear: boolean;
 }): WindowDefinition[] {
   const entries: WindowDefinition[] = [];
 
@@ -247,14 +598,16 @@ function buildWindows({
       {
         label: "sunset-primary",
         score: 100,
-        startMs: sunsetMs - 60 * 60000,
-        endMs: sunsetMs,
+        priority: 1,
+        startMs: sunsetMs - 60 * MINUTE,
+        endMs: sunsetMs + 15 * MINUTE,
       },
       {
         label: "sunset-extended",
-        score: 70,
-        startMs: sunsetMs - 60 * 60000,
-        endMs: sunsetMs + 30 * 60000,
+        score: 80,
+        priority: 2,
+        startMs: sunsetMs - 90 * MINUTE,
+        endMs: sunsetMs + 60 * MINUTE,
       }
     );
   }
@@ -264,23 +617,80 @@ function buildWindows({
     entries.push(
       {
         label: "sunrise-primary",
-        score: 90,
-        startMs: sunriseMs,
-        endMs: sunriseMs + 90 * 60000,
+        score: 100,
+        priority: 1,
+        startMs: sunriseMs - 15 * MINUTE,
+        endMs: sunriseMs + 60 * MINUTE,
       },
       {
         label: "sunrise-extended",
-        score: 60,
-        startMs: sunriseMs - 30 * 60000,
-        endMs: sunriseMs + 90 * 60000,
+        score: 80,
+        priority: 2,
+        startMs: sunriseMs - 30 * MINUTE,
+        endMs: sunriseMs + 90 * MINUTE,
       }
     );
   }
 
-  entries.push({
-    label: "clear",
-    score: isClear ? 40 : 0,
-  });
-
   return entries;
+}
+
+function determineDaytime(weather: OpenMeteoResponse, now: Date) {
+  const nowMs = now.getTime();
+  const sunrises = weather.daily?.sunrise ?? [];
+  const sunsets = weather.daily?.sunset ?? [];
+  const length = Math.min(sunrises.length, sunsets.length);
+  for (let i = 0; i < length; i++) {
+    const sunrise = parseUtcDate(sunrises[i]);
+    const sunset = parseUtcDate(sunsets[i]);
+    if (!sunrise || !sunset) continue;
+    const start = sunrise.getTime();
+    const end = sunset.getTime();
+    if (start <= nowMs && nowMs <= end) {
+      return true;
+    }
+  }
+  const isDay = weather.current_weather?.is_day;
+  if (typeof isDay === "number") {
+    return isDay === 1;
+  }
+  return null;
+}
+
+function findNextSolarEvent(
+  weather: OpenMeteoResponse,
+  now: Date
+): SolarEvent | null {
+  const events: SolarEvent[] = [];
+  const sunrises = weather.daily?.sunrise ?? [];
+  const sunsets = weather.daily?.sunset ?? [];
+
+  for (const entry of sunrises) {
+    const date = parseUtcDate(entry);
+    if (date) {
+      events.push({ type: "sunrise", time: date });
+    }
+  }
+  for (const entry of sunsets) {
+    const date = parseUtcDate(entry);
+    if (date) {
+      events.push({ type: "sunset", time: date });
+    }
+  }
+
+  const nowMs = now.getTime();
+  const future = events
+    .filter((event) => event.time.getTime() >= nowMs)
+    .sort((a, b) => a.time.getTime() - b.time.getTime());
+  if (future.length) {
+    return future[0];
+  }
+
+  if (events.length) {
+    const sorted = events.sort(
+      (a, b) => a.time.getTime() - b.time.getTime()
+    );
+    return sorted[0];
+  }
+  return null;
 }
