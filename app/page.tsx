@@ -41,16 +41,16 @@ export default async function Home() {
           <div className="inline-flex items-center gap-2 rounded-full border border-orange-500/30 bg-zinc-800/80 px-4 py-1.5 shadow-sm backdrop-blur-sm">
             <div className="h-2 w-2 animate-pulse rounded-full bg-orange-400"></div>
             <span className="text-xs font-medium uppercase tracking-[0.25em] text-orange-400">
-              Live
+              Live Now
             </span>
           </div>
 
           <h1 className="text-4xl font-bold leading-tight text-zinc-50 sm:text-5xl">
-            全球实时日落·<span className="bg-gradient-to-r from-orange-400 to-rose-400 bg-clip-text text-transparent">现在就看</span>
+            Catch sunsets around the globe<span className="bg-gradient-to-r from-orange-400 to-rose-400 bg-clip-text text-transparent"> in real time</span>
           </h1>
 
           <p className="max-w-2xl text-base text-zinc-400">
-            我们从世界各地挑选最佳的摄像头，让你随时欣赏正在发生的日落美景
+            We surface the most cinematic live cameras so you can enjoy golden-hour views anytime.
           </p>
         </header>
 

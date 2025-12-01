@@ -34,7 +34,7 @@ export function RoomVoicePanel({ status }: Props) {
     } catch (err) {
       console.error("enable audio error", err);
       setVoiceStatus("error");
-      setError("开启语音失败，请稍后再试");
+      setError("We couldn’t enable audio. Please try again.");
     }
   }
 
@@ -69,61 +69,59 @@ export function RoomVoicePanel({ status }: Props) {
 
   const pillClass =
     voiceStatus === "joined"
-      ? "bg-green-100 text-green-700"
+      ? "bg-green-200/30 text-green-100"
       : voiceStatus === "joining"
-      ? "bg-amber-100 text-amber-700"
+      ? "bg-orange-200/30 text-orange-100"
       : voiceStatus === "error" || status === "error"
-      ? "bg-red-100 text-red-600"
-      : "bg-zinc-100 text-zinc-500";
+      ? "bg-red-200/30 text-red-100"
+      : "bg-white/20 text-white/70";
 
   const label =
     voiceStatus === "joined"
-      ? "已加入"
+      ? "Joined"
       : voiceStatus === "joining"
-      ? "连接中"
+      ? "Connecting"
       : voiceStatus === "error" || status === "error"
-      ? "失败"
-      : "未加入";
+      ? "Failed"
+      : "Not joined";
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white shadow-lg shadow-black/30 backdrop-blur">
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <p className="text-base font-semibold text-zinc-900">语音房间</p>
-          <p className="text-xs text-zinc-500">
-            使用 Cloudflare Realtime 进行语音对话
-          </p>
+          <p className="text-base font-semibold text-white">Room voice channel</p>
+          <p className="text-xs text-white/60">Powered by Cloudflare Realtime Audio</p>
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${pillClass}`}>
           {label}
         </span>
       </div>
 
-      <p className="text-sm text-zinc-600">
-        加入后即可和房间中的朋友实时语音聊天，默认不启用摄像头。
+      <p className="text-sm text-white/70">
+        Hop on voice to talk without delay. Cameras stay off unless you enable them.
       </p>
 
       <div className="mt-4 flex gap-3">
         {voiceStatus === "joined" ? (
           <button
             onClick={handleLeave}
-            className="flex-1 rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:border-red-500"
+            className="flex-1 rounded-full border border-red-400/60 px-4 py-2 text-sm font-semibold text-red-100 transition hover:border-red-300"
           >
-            退出语音
+            Leave voice
           </button>
         ) : (
           <button
             onClick={handleJoin}
             disabled={!canJoin || voiceStatus === "joining"}
-            className="flex-1 rounded-full bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-500"
+            className="flex-1 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-orange-600/40 transition hover:shadow-xl disabled:cursor-not-allowed disabled:from-zinc-600 disabled:to-zinc-600 disabled:shadow-none"
           >
-            {voiceStatus === "joining" ? "连接中…" : "加入语音"}
+            {voiceStatus === "joining" ? "Connecting…" : "Join voice"}
           </button>
         )}
       </div>
 
       {error && (
-        <p className="mt-3 text-sm text-red-500" role="alert">
+        <p className="mt-3 text-sm text-red-200" role="alert">
           {error}
         </p>
       )}

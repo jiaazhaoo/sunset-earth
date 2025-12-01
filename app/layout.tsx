@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sunset Earth - 全球实时日落",
-  description: "从世界各地挑选最佳的摄像头，随时欣赏正在发生的日落美景",
+  title: "Sunset Earth - Live Global Sunsets",
+  description:
+    "Watch curated live cameras capturing golden hours from cities around the world.",
 };
 
 export default function RootLayout({
@@ -24,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className="dark">
+    <html lang="en" className="dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

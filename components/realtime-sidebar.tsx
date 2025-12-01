@@ -65,7 +65,7 @@ function RealtimeProviderShell({ roomId }: Props) {
       } catch (err) {
         console.error("Realtime token error:", err);
         if (!cancelled) {
-          setError("连接 Cloudflare Realtime 失败，请刷新页面再试");
+          setError("Connecting to Cloudflare Realtime failed. Please refresh and try again.");
           setStatus("error");
         }
       }
@@ -94,7 +94,7 @@ function RealtimeProviderShell({ roomId }: Props) {
       } catch (err) {
         console.error("Realtime meeting join error:", err);
         if (!disposed) {
-          setError("加入实时会议失败，请刷新页面再试");
+          setError("We couldn’t join the realtime meeting. Refresh and try again.");
           setStatus("error");
         }
       }
@@ -128,14 +128,14 @@ function SidebarContent({
 
   if (status === "error" || error) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-600">
-        {error ?? "连接实时会议失败"}
+      <div className="rounded-3xl border border-red-400/40 bg-red-500/10 p-6 text-sm text-red-100">
+        {error ?? "We couldn’t join the realtime meeting."}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <RoomVoicePanel status={status} />
       <ParticipantsPanel
         isReady={Boolean(meeting && status === "connected")}
@@ -143,18 +143,27 @@ function SidebarContent({
       />
       {meeting && status === "connected" ? (
         <>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-0 shadow-sm">
+          <div className="rounded-3xl border border-white/10 bg-white/5 shadow-2xl shadow-black/30 backdrop-blur">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-orange-200">
+                  Live chat
+                </p>
+                <p className="text-lg font-semibold text-white">Talk with friends</p>
+              </div>
+            </div>
             <div className="h-[420px] min-h-[420px]">
               <RtkChat
                 meeting={meeting}
                 style={{
-                  "--rtk-color-background-base": "#ffffff",
-                  "--rtk-color-background-elevated": "#f8f9fb",
-                  "--rtk-color-border": "#e4e4e7",
-                  "--rtk-color-text-primary": "#0f172a",
-                  "--rtk-color-text-secondary": "#475569",
-                  "--rtk-color-surface": "#ffffff",
-                  "--rtk-color-muted": "#f4f4f5",
+                  "--rtk-color-background-base": "rgba(15,23,42,0.85)",
+                  "--rtk-color-background-elevated": "rgba(15,23,42,0.7)",
+                  "--rtk-color-border": "rgba(255,255,255,0.1)",
+                  "--rtk-color-text-primary": "#f8fafc",
+                  "--rtk-color-text-secondary": "#cbd5f5",
+                  "--rtk-color-surface": "rgba(15,23,42,0.8)",
+                  "--rtk-color-muted": "rgba(148,163,184,0.25)",
+                  "--rtk-border-radius": "18px",
                 }}
               />
             </div>
@@ -166,8 +175,8 @@ function SidebarContent({
           </div>
         </>
       ) : (
-        <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-6 text-sm text-zinc-500">
-          正在连接实时会议...
+        <div className="rounded-3xl border border-dashed border-white/20 bg-white/5 p-6 text-sm text-white/70">
+          Connecting to realtime meeting...
         </div>
       )}
     </div>
@@ -226,7 +235,7 @@ function ParticipantsPanel({
     return [
       {
         id: selfId,
-        name: meeting.self.name || "我",
+        name: meeting.self.name || "You",
         picture: (meeting.self as { picture?: string }).picture,
       },
       ...participants,
@@ -246,23 +255,23 @@ function ParticipantsPanel({
   });
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/30 backdrop-blur">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-zinc-900">房间成员</p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-sm font-semibold text-white">Room members</p>
+          <p className="text-xs text-white/60">
             {isReady
-              ? `${participantsWithSelf.length || 0} 人正在房间`
-              : "正在连接实时状态…"}
+              ? `${participantsWithSelf.length || 0} active now`
+              : "Connecting to presence..."}
           </p>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-3">
+      <div className="mt-4 flex flex-wrap gap-3">
         {!isReady ? (
-          <p className="text-sm text-zinc-500">等待成员加入...</p>
+          <p className="text-sm text-white/70">Waiting for guests to join…</p>
         ) : participantsWithSelf.length === 0 ? (
-          <p className="text-sm text-zinc-500">
-            目前只有你在房间，快邀请朋友吧！
+          <p className="text-sm text-white/70">
+            It’s just you for now. Share the link to invite friends!
           </p>
         ) : (
           <>
@@ -270,7 +279,7 @@ function ParticipantsPanel({
               <ParticipantAvatar key={participant.id} participant={participant} />
             ))}
             {remaining > 0 && (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-dashed border-zinc-200 text-xs text-zinc-500">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-dashed border-white/30 text-xs text-white/70">
                 +{remaining}
               </div>
             )}
@@ -296,7 +305,7 @@ function ParticipantAvatar({ participant }: { participant: ParticipantInfo }) {
   if (participant.picture) {
     return (
       <div
-        className="h-10 w-10 rounded-full border border-zinc-200 bg-cover bg-center"
+        className="h-10 w-10 rounded-full border border-white/20 bg-cover bg-center"
         style={{ backgroundImage: `url(${participant.picture})` }}
         title={participant.name}
         aria-label={participant.name}
@@ -305,7 +314,7 @@ function ParticipantAvatar({ participant }: { participant: ParticipantInfo }) {
   }
 
   return (
-    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100 text-sm font-semibold text-zinc-600">
+    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">
       {initials}
     </div>
   );
