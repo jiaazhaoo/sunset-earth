@@ -70,7 +70,47 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(summary);
+    const result = {
+      ...summary,
+      chainStatus: {
+        replaceLink: "success",
+        weatherCache: "pending",
+        computeRankings: "pending",
+      },
+    };
+
+    // Trigger next task in chain: weather-cache
+    try {
+      const baseUrl = request.nextUrl.origin;
+      console.log("[replace-link] triggering weather-cache...");
+      const weatherResponse = await fetch(`${baseUrl}/api/weather-cache`, {
+        headers: {
+          Authorization: `Bearer ${process.env.CRON_SECRET}`,
+        },
+      });
+
+      if (!weatherResponse.ok) {
+        const errorText = await weatherResponse.text();
+        console.error(
+          "[replace-link] weather-cache failed:",
+          weatherResponse.status,
+          errorText
+        );
+        result.chainStatus.weatherCache = "failed";
+        result.chainStatus.computeRankings = "skipped";
+        return NextResponse.json(result, { status: 207 });
+      }
+
+      result.chainStatus.weatherCache = "triggered";
+      console.log("[replace-link] successfully triggered weather-cache");
+    } catch (error) {
+      console.error("[replace-link] failed to trigger weather-cache:", error);
+      result.chainStatus.weatherCache = "failed";
+      result.chainStatus.computeRankings = "skipped";
+      return NextResponse.json(result, { status: 207 });
+    }
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("[replace-link]", error);
     return NextResponse.json(

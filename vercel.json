@@ -2,15 +2,8 @@
   "crons": [
     {
       "path": "/api/refresh-links",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/replace-link",
-      "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/weather-cache",
-      "schedule": "0 1 * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }
+

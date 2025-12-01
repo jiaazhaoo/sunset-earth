@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getCameraById,
-  getRandomCamera,
-  listCameras,
-} from "@/lib/cameras";
-import type { CameraRecord } from "@/lib/cameras";
-import { fetchWeatherSnapshot, scoreCameraWeather } from "@/lib/weather";
-import type { CameraEvaluation } from "@/lib/weather";
-import { isCameraAvailable } from "@/lib/availability";
+import { getCameraById, getRandomCamera } from "@/lib/cameras";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function GET(request: NextRequest) {
   try {
-    const now = new Date();
     const cameraId = request.nextUrl.searchParams.get("cameraId");
     const excludeParam = request.nextUrl.searchParams.get("exclude") ?? "";
     const excludeSet = new Set(
@@ -21,6 +13,7 @@ export async function GET(request: NextRequest) {
         .filter(Boolean)
     );
 
+    // If requesting specific camera metadata
     if (cameraId) {
       const camera = await getCameraById(cameraId);
       if (!camera) {
@@ -29,167 +22,141 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         );
       }
-      const entry = await buildCameraEntry(camera, now);
+
+      const ranking = await getRanking(cameraId);
       return NextResponse.json({
         camera,
-        meta: entry ? buildMeta(entry) : null,
+        meta: ranking ? buildMeta(cameraId, ranking) : null,
         rotationReset: false,
       });
     }
 
-    const best = await findBestCamera(excludeSet, now);
+    // Find best camera from pre-computed rankings
+    const best = await findBestCameraFromRankings(excludeSet);
     if (!best) {
-      return NextResponse.json(
-        { error: "No cameras available" },
-        { status: 404 }
-      );
+      // Fallback to random camera if no rankings available
+      const fallback = await getRandomCamera();
+      return fallback
+        ? NextResponse.json({
+            camera: fallback,
+            meta: null,
+            rotationReset: false,
+          })
+        : NextResponse.json(
+            { error: "No cameras available" },
+            { status: 404 }
+          );
     }
 
     return NextResponse.json(best);
   } catch (error) {
     console.error("[api/best-camera] error:", error);
     return NextResponse.json(
-      { error: "Failed to calculate best camera" },
+      { error: "Failed to find best camera" },
       { status: 500 }
     );
   }
 }
 
-const CAMERA_FETCH_BATCH = 5;
+async function findBestCameraFromRankings(exclude: Set<string>) {
+  // Build exclusion condition
+  const exclusionList = Array.from(exclude);
 
-async function findBestCamera(exclude: Set<string>, now: Date) {
-  const candidates: CameraEntry[] = [];
-  let offset = 0;
+  // Calculate freshness threshold (rankings should be updated within last 24 hours)
+  // In development, rankings may not update every hour, so we use a longer threshold
+  const freshnessThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  while (true) {
-    const batch = await listCameras(CAMERA_FETCH_BATCH, offset);
-    if (!batch.length) {
-      break;
-    }
-    offset += batch.length;
+  // Query pre-computed rankings
+  let query = supabaseAdmin
+    .from("camera_rankings")
+    .select("*")
+    .eq("available", true)
+    .gte("computed_at", freshnessThreshold.toISOString())  // Only fresh data
+    .order("score", { ascending: false })
+    .limit(100);
 
-    const results = await Promise.all(
-      batch.map((camera) => buildCameraEntry(camera, now))
-    );
-    for (const entry of results) {
-      if (entry) {
-        candidates.push(entry);
-      }
-    }
+  if (exclusionList.length > 0) {
+    query = query.not("camera_id", "in", `(${exclusionList.join(",")})`);
   }
 
-  const scored = candidates
-    .filter((entry): entry is typeof entry => entry !== null)
-    .sort((a, b) => {
-      if (!a?.evaluation || !b?.evaluation) {
-        return 0;
-      }
-      if (b.evaluation.score !== a.evaluation.score) {
-        return b.evaluation.score - a.evaluation.score;
-      }
-      return (
-        (a.evaluation.distanceMinutes ?? Infinity) -
-        (b.evaluation.distanceMinutes ?? Infinity)
-      );
-    });
+  const { data: rankings, error } = await query;
 
-  if (scored.length === 0) {
-    const fallback = await getRandomCamera();
-    return fallback ? { camera: fallback, rotationReset: false } : null;
+  if (error) {
+    console.error("[findBestCameraFromRankings] query error:", error);
+    return null;
   }
 
-  const candidate = scored.find(
-    (entry) => entry && !exclude.has(entry.camera.id)
-  );
-
-  if (candidate) {
-    return {
-      camera: candidate.camera,
-      meta: buildMeta(candidate),
-      rotationReset: false,
-    };
+  if (!rankings || rankings.length === 0) {
+    return null;
   }
 
-  const best = scored[0];
-  if (!best || best.evaluation.score <= 0) {
-    const fallback = await getRandomCamera();
-    return fallback
-      ? { camera: fallback, rotationReset: true }
-      : null;
+  // Get the best ranked camera that's not excluded
+  const bestRanking = rankings[0];
+  const camera = await getCameraById(bestRanking.camera_id);
+
+  if (!camera) {
+    return null;
   }
+
+  // Check if we've cycled through all cameras
+  const totalAvailable = await countAvailableRankings();
+  const rotationReset = exclusionList.length >= totalAvailable;
 
   return {
-    camera: best.camera,
-    meta: buildMeta(best),
-    rotationReset: true,
+    camera,
+    meta: buildMeta(bestRanking.camera_id, bestRanking),
+    rotationReset,
   };
 }
 
-type CameraEntry = {
-  camera: CameraRecord;
-  evaluation: CameraEvaluation;
-  weatherSnapshot: {
-    sunrise?: string;
-    sunset?: string;
-    timezone?: string;
-  };
-};
+async function getRanking(cameraId: string) {
+  // Accept data up to 24 hours old for individual camera queries
+  const freshnessThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-async function buildCameraEntry(
-  camera: CameraRecord,
-  now: Date
-): Promise<CameraEntry | null> {
-  if (camera.lat === null || camera.lng === null) {
-    return null;
-  }
-  if (camera.linkAvailable === false) {
+  const { data, error } = await supabaseAdmin
+    .from("camera_rankings")
+    .select("*")
+    .eq("camera_id", cameraId)
+    .gte("computed_at", freshnessThreshold.toISOString())
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[getRanking] query error:", error);
     return null;
   }
 
-  const availability = await isCameraAvailable(camera);
-  if (!availability.available) {
-    return null;
-  }
-
-  try {
-    const weather = await fetchWeatherSnapshot(camera.lat, camera.lng, camera.id);
-    const hasCitySkyline = camera.tags?.some((tag) =>
-      tag.toLowerCase().includes("city skyline")
-    );
-    const evaluation = scoreCameraWeather(weather, now, { hasCitySkyline });
-    return {
-      camera,
-      evaluation,
-      weatherSnapshot: {
-        sunrise: weather.daily?.sunrise?.[0],
-        sunset: weather.daily?.sunset?.[0],
-        timezone: weather.timezone,
-      },
-    };
-  } catch (error) {
-    console.warn(
-      `[api/best-camera] weather failed for camera ${camera.id}`,
-      error
-    );
-    return null;
-  }
+  return data;
 }
 
-function buildMeta(entry: CameraEntry) {
+async function countAvailableRankings() {
+  const { count, error } = await supabaseAdmin
+    .from("camera_rankings")
+    .select("*", { count: "exact", head: true })
+    .eq("available", true);
+
+  if (error) {
+    console.warn("[countAvailableRankings] error:", error);
+    return 0;
+  }
+
+  return count ?? 0;
+}
+
+function buildMeta(cameraId: string, ranking: any) {
   return {
-    cameraId: entry.camera.id,
-    score: entry.evaluation.score,
-    label: entry.evaluation.label,
-    isClear: entry.evaluation.isClear,
-    distanceMinutes: entry.evaluation.distanceMinutes,
-    weatherClass: entry.evaluation.weatherClass,
-    timezone: entry.weatherSnapshot.timezone,
-    sunrise: entry.weatherSnapshot.sunrise,
-    sunset: entry.weatherSnapshot.sunset,
-    nextEvent: entry.evaluation.nextEvent
+    cameraId,
+    score: ranking.score ?? 0,
+    label: ranking.label ?? undefined,
+    isClear: ranking.is_clear ?? false,
+    distanceMinutes: ranking.distance_minutes ?? undefined,
+    weatherClass: ranking.weather_class ?? undefined,
+    timezone: ranking.timezone ?? null,
+    sunrise: ranking.sunrise ?? undefined,
+    sunset: ranking.sunset ?? undefined,
+    nextEvent: ranking.next_event_type
       ? {
-          type: entry.evaluation.nextEvent.type,
-          timeISO: entry.evaluation.nextEvent.time.toISOString(),
+          type: ranking.next_event_type,
+          timeISO: ranking.next_event_time,
         }
       : null,
   };

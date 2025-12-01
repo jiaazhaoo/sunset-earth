@@ -1,31 +1,57 @@
 import { CameraViewer } from "@/components/camera-viewer";
-import { getRandomCamera } from "@/lib/cameras";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getCameraById, getRandomCamera } from "@/lib/cameras";
+import type { CameraRecord } from "@/lib/cameras";
+
+async function getBestCamera(): Promise<CameraRecord | null> {
+  try {
+    // Query pre-computed rankings for the best camera
+    const freshnessThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const { data: rankings, error } = await supabaseAdmin
+      .from("camera_rankings")
+      .select("camera_id")
+      .eq("available", true)
+      .gte("computed_at", freshnessThreshold.toISOString())
+      .order("score", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !rankings) {
+      console.warn("[getBestCamera] No rankings found, falling back to random");
+      return await getRandomCamera();
+    }
+
+    const camera = await getCameraById(rankings.camera_id);
+    return camera || await getRandomCamera();
+  } catch (error) {
+    console.error("[getBestCamera] Error:", error);
+    return await getRandomCamera();
+  }
+}
 
 export default async function Home() {
-  const initialCamera = await getRandomCamera();
+  // Get the best camera from pre-computed rankings
+  const initialCamera = await getBestCamera();
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 via-white to-white">
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-12 px-6 py-16 sm:px-10">
-        <header className="flex flex-col gap-4">
-          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-orange-500">
-            Sunset Earth
-          </p>
-          <h1 className="text-4xl font-semibold text-zinc-900">
-            全球实时日落 · 现在就看
-          </h1>
-          <p className="text-base text-zinc-600">
-            我们从世界各地挑选最佳的 YouTube 摄像头，随时看到正在发生的日落风景。
-            点击切换即可秒换下一个摄像头。
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <a
-              href="/all-cameras"
-              className="inline-flex items-center rounded-full border border-orange-200 px-4 py-2 text-sm font-medium text-orange-600 transition hover:border-orange-500 hover:text-orange-800"
-            >
-              查看全部摄像头
-            </a>
+    <div className="flex min-h-screen items-center bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950">
+      <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:px-8">
+        <header className="flex flex-col items-center gap-3 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-orange-500/30 bg-zinc-800/80 px-4 py-1.5 shadow-sm backdrop-blur-sm">
+            <div className="h-2 w-2 animate-pulse rounded-full bg-orange-400"></div>
+            <span className="text-xs font-medium uppercase tracking-[0.25em] text-orange-400">
+              Live
+            </span>
           </div>
+
+          <h1 className="text-4xl font-bold leading-tight text-zinc-50 sm:text-5xl">
+            全球实时日落·<span className="bg-gradient-to-r from-orange-400 to-rose-400 bg-clip-text text-transparent">现在就看</span>
+          </h1>
+
+          <p className="max-w-2xl text-base text-zinc-400">
+            我们从世界各地挑选最佳的摄像头，让你随时欣赏正在发生的日落美景
+          </p>
         </header>
 
         <CameraViewer initialCamera={initialCamera} />

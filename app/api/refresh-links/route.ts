@@ -93,10 +93,51 @@ export async function GET(request: NextRequest) {
 
     const roomsCleanup = await cleanupEmptyRooms();
 
-    return NextResponse.json({
+    const result = {
       ...summary,
       roomsCleanup,
-    });
+      chainStatus: {
+        refreshLinks: "success",
+        replaceLink: "pending",
+        weatherCache: "pending",
+        computeRankings: "pending",
+      },
+    };
+
+    // Trigger next task in chain: replace-link
+    try {
+      const baseUrl = request.nextUrl.origin;
+      console.log("[refresh-links] triggering replace-link...");
+      const replaceResponse = await fetch(`${baseUrl}/api/replace-link`, {
+        headers: {
+          Authorization: `Bearer ${process.env.CRON_SECRET}`,
+        },
+      });
+
+      if (!replaceResponse.ok) {
+        const errorText = await replaceResponse.text();
+        console.error(
+          "[refresh-links] replace-link failed:",
+          replaceResponse.status,
+          errorText
+        );
+        result.chainStatus.replaceLink = "failed";
+        result.chainStatus.weatherCache = "skipped";
+        result.chainStatus.computeRankings = "skipped";
+        return NextResponse.json(result, { status: 207 }); // 207 Multi-Status
+      }
+
+      result.chainStatus.replaceLink = "triggered";
+      console.log("[refresh-links] successfully triggered replace-link");
+    } catch (error) {
+      console.error("[refresh-links] failed to trigger replace-link:", error);
+      result.chainStatus.replaceLink = "failed";
+      result.chainStatus.weatherCache = "skipped";
+      result.chainStatus.computeRankings = "skipped";
+      return NextResponse.json(result, { status: 207 });
+    }
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("[refresh-links]", error);
     return NextResponse.json(

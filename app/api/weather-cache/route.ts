@@ -74,7 +74,47 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(summary);
+    const result = {
+      ...summary,
+      chainStatus: {
+        weatherCache: "success",
+        computeRankings: "pending",
+      },
+    };
+
+    // Trigger next task in chain: compute-rankings
+    try {
+      const baseUrl = request.nextUrl.origin;
+      console.log("[weather-cache] triggering compute-rankings...");
+      const rankingsResponse = await fetch(`${baseUrl}/api/compute-rankings`, {
+        headers: {
+          Authorization: `Bearer ${process.env.CRON_SECRET}`,
+        },
+      });
+
+      if (!rankingsResponse.ok) {
+        const errorText = await rankingsResponse.text();
+        console.error(
+          "[weather-cache] compute-rankings failed:",
+          rankingsResponse.status,
+          errorText
+        );
+        result.chainStatus.computeRankings = "failed";
+        return NextResponse.json(result, { status: 207 });
+      }
+
+      result.chainStatus.computeRankings = "triggered";
+      console.log("[weather-cache] successfully triggered compute-rankings");
+    } catch (error) {
+      console.error(
+        "[weather-cache] failed to trigger compute-rankings:",
+        error
+      );
+      result.chainStatus.computeRankings = "failed";
+      return NextResponse.json(result, { status: 207 });
+    }
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("[weather-cache]", error);
     return NextResponse.json(

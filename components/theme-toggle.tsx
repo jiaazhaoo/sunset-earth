@@ -7,22 +7,25 @@ type ThemeMode = "light" | "dark" | "auto";
 const STORAGE_KEY = "sunset-earth-theme";
 
 export function ThemeToggle() {
-  const [mode, setMode] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") {
-      return "auto";
-    }
+  const [mode, setMode] = useState<ThemeMode>("auto");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
     const stored = window.localStorage.getItem(STORAGE_KEY) as
       | ThemeMode
       | null;
-    return stored ?? "auto";
-  });
+    if (stored) {
+      setMode(stored);
+    }
+  }, []);
 
   useEffect(() => {
     applyTheme(mode);
-    if (typeof window !== "undefined") {
+    if (mounted) {
       window.localStorage.setItem(STORAGE_KEY, mode);
     }
-  }, [mode]);
+  }, [mode, mounted]);
 
   return (
     <div className="theme-toggle">
