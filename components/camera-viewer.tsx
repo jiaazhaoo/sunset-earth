@@ -302,8 +302,29 @@ export function CameraViewer({ initialCamera }: Props) {
             timezone={activeTimezone}
           />
         </div>
+        {process.env.NODE_ENV !== "production" && (
+          <DebugFloatingPanel score={cameraMeta?.score ?? null} label={cameraMeta?.label ?? null} />
+        )}
       </div>
     </section>
+  );
+}
+function DebugFloatingPanel({
+  score,
+  label,
+}: {
+  score: number | null;
+  label: string | null;
+}) {
+  return (
+    <div className="fixed bottom-4 right-4 z-50 rounded-2xl border border-orange-200 bg-white/90 px-4 py-3 text-sm shadow-lg backdrop-blur">
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-orange-500">
+        <span>🎯</span>
+        <span>Priority</span>
+      </p>
+      <p className="mt-1 text-2xl font-semibold text-zinc-900">{score ?? "--"}</p>
+      <p className="text-xs text-zinc-500">{label ?? "No label"}</p>
+    </div>
   );
 }
 
