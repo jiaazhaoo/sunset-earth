@@ -32,6 +32,8 @@ export async function POST(request: NextRequest) {
       hostLink: null,
       ytbTitle: null,
       linkAvailable: true,
+      sunsetDelay: 0,
+      sunriseAdvance: 0,
     });
 
     return NextResponse.json(availability);
