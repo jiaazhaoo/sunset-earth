@@ -86,6 +86,7 @@ Use this doc to brief AI coding partners (or new engineers) so they can jump dir
 | `latitude`, `longitude`, `timezone` | Needed for weather + sun calculations. |
 | `tag` | Category (e.g., City Skyline). Used to boost scoring. |
 | `link_available` | User-verified availability flag; false cameras are skipped. |
+| `sunset_delay`, `sunrise_advance` | Minutes to extend post-sunset or pre-sunrise golden windows for special cameras. |
 
 ### 5.2 `camera_rankings`
 | Column | Description |

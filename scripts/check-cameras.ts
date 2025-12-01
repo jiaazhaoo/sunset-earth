@@ -17,6 +17,8 @@ function makeCamera(videoId: string, title: string) {
     hostLink: null,
     ytbTitle: title,
     linkAvailable: true,
+    sunsetDelay: 0,
+    sunriseAdvance: 0,
   };
   return camera;
 }

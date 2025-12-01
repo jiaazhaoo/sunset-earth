@@ -112,5 +112,7 @@ function buildCameraStub(videoId: string, title?: string | null): CameraRecord {
     hostLink: null,
     ytbTitle: title ?? null,
     linkAvailable: true,
+    sunsetDelay: 0,
+    sunriseAdvance: 0,
   };
 }

@@ -193,6 +193,8 @@ async function refreshWeatherSnapshot(
 
 type ScoreOptions = {
   hasCitySkyline?: boolean;
+  sunsetDelayMinutes?: number;
+  sunriseAdvanceMinutes?: number;
 };
 
 type SolarEvent = {
@@ -237,6 +239,8 @@ export function scoreCameraWeather(
     isDaytime,
     isClear,
     hasCitySkyline: options.hasCitySkyline ?? false,
+    sunsetDelayMinutes: Math.max(0, options.sunsetDelayMinutes ?? 0),
+    sunriseAdvanceMinutes: Math.max(0, options.sunriseAdvanceMinutes ?? 0),
   });
 
   const qualityScore = buildQualityScore({
@@ -324,6 +328,8 @@ function resolveTimeTier({
   isDaytime,
   isClear,
   hasCitySkyline,
+  sunsetDelayMinutes,
+  sunriseAdvanceMinutes,
 }: {
   sunrise: Date | null;
   sunset: Date | null;
@@ -331,8 +337,15 @@ function resolveTimeTier({
   isDaytime: boolean | null;
   isClear: boolean;
   hasCitySkyline: boolean;
+  sunsetDelayMinutes: number;
+  sunriseAdvanceMinutes: number;
 }): TimeTierResult {
-  const windows = buildWindows({ sunrise, sunset });
+  const windows = buildWindows({
+    sunrise,
+    sunset,
+    sunsetDelayMinutes,
+    sunriseAdvanceMinutes,
+  });
   const primary = findMatchingWindow(windows, nowMs, 1);
   if (primary) {
     return primary;
@@ -601,47 +614,53 @@ type WindowDefinition = {
 function buildWindows({
   sunrise,
   sunset,
+  sunsetDelayMinutes,
+  sunriseAdvanceMinutes,
 }: {
   sunrise: Date | null;
   sunset: Date | null;
+  sunsetDelayMinutes: number;
+  sunriseAdvanceMinutes: number;
 }): WindowDefinition[] {
   const entries: WindowDefinition[] = [];
 
   if (sunset) {
     const sunsetMs = sunset.getTime();
+    const delayMs = sunsetDelayMinutes * MINUTE;
     entries.push(
       {
         label: "sunset-primary",
         score: 100,
         priority: 1,
         startMs: sunsetMs - 60 * MINUTE,
-        endMs: sunsetMs + 5 * MINUTE,
+        endMs: sunsetMs + 5 * MINUTE + delayMs,
       },
       {
         label: "sunset-extended",
         score: 80,
         priority: 2,
         startMs: sunsetMs - 90 * MINUTE,
-        endMs: sunsetMs + 10 * MINUTE,
+        endMs: sunsetMs + 10 * MINUTE + delayMs,
       }
     );
   }
 
   if (sunrise) {
     const sunriseMs = sunrise.getTime();
+    const advanceMs = sunriseAdvanceMinutes * MINUTE;
     entries.push(
       {
         label: "sunrise-primary",
         score: 100,
         priority: 1,
-        startMs: sunriseMs - 15 * MINUTE,
+        startMs: sunriseMs - 15 * MINUTE - advanceMs,
         endMs: sunriseMs + 60 * MINUTE,
       },
       {
         label: "sunrise-extended",
         score: 80,
         priority: 2,
-        startMs: sunriseMs - 30 * MINUTE,
+        startMs: sunriseMs - 30 * MINUTE - advanceMs,
         endMs: sunriseMs + 90 * MINUTE,
       }
     );

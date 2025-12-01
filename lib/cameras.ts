@@ -2,7 +2,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import tzLookup from "tz-lookup";
 
 const CAMERA_COLUMNS =
-  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available";
+  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available,sunset_delay,sunrise_advance";
 
 export type CameraRow = {
   camera_id: number | string;
@@ -18,6 +18,8 @@ export type CameraRow = {
   host_link: string | null;
   ytb_title: string | null;
   link_available: boolean | null;
+  sunset_delay: number | string | null;
+  sunrise_advance: number | string | null;
 };
 
 export type CameraRecord = {
@@ -34,6 +36,8 @@ export type CameraRecord = {
   hostLink: string | null;
   ytbTitle: string | null;
   linkAvailable: boolean;
+  sunsetDelay: number;
+  sunriseAdvance: number;
 };
 
 export async function listCameras(limit = 200, offset = 0) {
@@ -97,6 +101,8 @@ function mapCameraRow(row: CameraRow): CameraRecord {
     hostLink: row.host_link ?? null,
     ytbTitle: row.ytb_title ?? null,
     linkAvailable: row.link_available ?? true,
+    sunsetDelay: toNumber(row.sunset_delay) ?? 0,
+    sunriseAdvance: toNumber(row.sunrise_advance) ?? 0,
   };
 }
 

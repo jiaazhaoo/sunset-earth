@@ -109,6 +109,8 @@ export async function GET(request: NextRequest) {
           );
           const evaluation = scoreCameraWeather(weather, now, {
             hasCitySkyline,
+            sunsetDelayMinutes: camera.sunsetDelay ?? 0,
+            sunriseAdvanceMinutes: camera.sunriseAdvance ?? 0,
           });
 
           // Store ranking

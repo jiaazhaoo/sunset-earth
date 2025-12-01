@@ -156,7 +156,11 @@ async function buildCameraEntry(
     const hasCitySkyline = camera.tags?.some((tag) =>
       tag.toLowerCase().includes("city skyline")
     );
-    const evaluation = scoreCameraWeather(weather, now, { hasCitySkyline });
+    const evaluation = scoreCameraWeather(weather, now, {
+      hasCitySkyline,
+      sunsetDelayMinutes: camera.sunsetDelay ?? 0,
+      sunriseAdvanceMinutes: camera.sunriseAdvance ?? 0,
+    });
     return {
       camera,
       evaluation,
