@@ -143,6 +143,7 @@ async function countAvailableRankings() {
 }
 
 function buildMeta(cameraId: string, ranking: any) {
+  const events = resolveUpcomingEvents(ranking);
   return {
     cameraId,
     score: ranking.score ?? 0,
@@ -153,11 +154,54 @@ function buildMeta(cameraId: string, ranking: any) {
     timezone: ranking.timezone ?? null,
     sunrise: ranking.sunrise ?? undefined,
     sunset: ranking.sunset ?? undefined,
-    nextEvent: ranking.next_event_type
-      ? {
-          type: ranking.next_event_type,
-          timeISO: ranking.next_event_time,
-        }
-      : null,
+    nextEvent: events[0] ?? null,
+    followingEvent: events[1] ?? null,
   };
+}
+
+function resolveUpcomingEvents(ranking: any) {
+  const events: Array<{ type: "sunrise" | "sunset"; timeISO: string }> = [];
+  if (ranking.next_event_type && ranking.next_event_time) {
+    events.push({
+      type: ranking.next_event_type,
+      timeISO: ranking.next_event_time,
+    });
+  }
+  if (ranking.following_event_type && ranking.following_event_time) {
+    events.push({
+      type: ranking.following_event_type,
+      timeISO: ranking.following_event_time,
+    });
+  }
+
+  if (!events.length) {
+    return [];
+  }
+
+  const now = Date.now();
+  const parsed = events
+    .map((event) => {
+      const timestamp = Date.parse(event.timeISO);
+      if (Number.isNaN(timestamp)) {
+        return null;
+      }
+      return { ...event, timestamp };
+    })
+    .filter((event): event is { type: "sunrise" | "sunset"; timeISO: string; timestamp: number } =>
+      Boolean(event)
+    )
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  if (!parsed.length) {
+    return [];
+  }
+
+  const future = parsed.filter((event) => event.timestamp >= now);
+  const ordered = future.length ? future : parsed;
+  return ordered
+    .map((event) => ({
+      type: event.type,
+      timeISO: new Date(event.timestamp).toISOString(),
+    }))
+    .slice(0, 2);
 }

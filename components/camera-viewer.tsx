@@ -24,6 +24,10 @@ type CameraMeta = {
     type: "sunrise" | "sunset";
     timeISO: string;
   } | null;
+  followingEvent?: {
+    type: "sunrise" | "sunset";
+    timeISO: string;
+  } | null;
 };
 
 type BestCameraResponse = {
@@ -180,7 +184,7 @@ export function CameraViewer({ initialCamera }: Props) {
       setCamera(payload.camera);
       setCameraMeta(payload.meta ?? null);
     } catch {
-      setError("切换摄像头失败，请稍后再试。");
+      setError("Unable to load another camera right now. Please try again soon.");
     } finally {
       setLoading(false);
     }
@@ -225,10 +229,10 @@ export function CameraViewer({ initialCamera }: Props) {
 
   useEffect(() => {
     if (!activeTimezone) {
-      setLocalTime("未知");
+      setLocalTime("Unknown");
       return;
     }
-    const formatter = new Intl.DateTimeFormat("zh-CN", {
+    const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone: activeTimezone,
       weekday: "short",
       hour: "2-digit",
@@ -245,54 +249,59 @@ export function CameraViewer({ initialCamera }: Props) {
   }, [activeTimezone]);
 
   return (
-    <section className="grid w-full grid-cols-1 gap-4 lg:grid-cols-[1.5fr,1fr]">
-      <div className="aspect-video w-full overflow-hidden rounded-2xl border border-zinc-200/50 bg-black shadow-xl ring-1 ring-black/5 dark:border-zinc-700/50 dark:ring-white/5">
-        {camera?.embedUrl ? (
-          <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-sm text-zinc-400 dark:text-zinc-500">
-            暂无可播放的摄像头
-          </div>
-        )}
+    <section className="grid w-full grid-cols-1 items-start gap-6 lg:grid-cols-[1.5fr,1fr]">
+      <div className="flex w-full justify-center">
+        <div className="aspect-video w-full max-w-[80%] overflow-hidden rounded-2xl border border-zinc-200/50 bg-black shadow-xl ring-1 ring-black/5 dark:border-zinc-700/50 dark:ring-white/5">
+          {camera?.embedUrl ? (
+            <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-400 dark:text-zinc-500">
+              No playable camera right now
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200/50 bg-white/80 p-6 shadow-lg backdrop-blur-sm dark:border-zinc-700/50 dark:bg-zinc-800/80">
-        <div>
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-              {camera?.name ?? "暂无"}
-            </h2>
-            {camera?.tags?.length ? (
-              <span className="rounded-full border border-orange-200/60 bg-gradient-to-br from-orange-50 to-amber-50 px-2.5 py-0.5 text-xs font-medium text-orange-700 dark:border-orange-500/30 dark:from-orange-950/50 dark:to-amber-950/30 dark:text-orange-300">
-                {camera.tags[0]}
-              </span>
-            ) : null}
+      <div className="flex w-full justify-center">
+        <div className="flex w-full max-w-[80%] flex-col gap-4 rounded-2xl border border-zinc-200/50 bg-white/85 p-4 shadow-lg backdrop-blur-sm dark:border-zinc-700/50 dark:bg-zinc-800/90">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50 sm:text-3xl">
+                  {camera?.name ?? "No active stream"}
+                </h2>
+                {camera?.tags?.length ? (
+                  <span className="rounded-full border border-orange-200/60 bg-gradient-to-br from-orange-50 to-amber-50 px-2 py-0.5 text-xs font-medium text-orange-700 dark:border-orange-500/30 dark:from-orange-950/50 dark:to-amber-950/30 dark:text-orange-300">
+                    {camera.tags[0]}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1 flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>
+                  {[camera?.city, camera?.country].filter(Boolean).join(" · ") ||
+                    "Waiting for location..."}
+                </span>
+              </div>
+            </div>
+
+            <CameraActions
+              cameraId={camera?.id ?? null}
+              loading={loading}
+              onSwitchClick={handleSwitch}
+              layout="inline"
+            />
           </div>
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span>
-              {[camera?.city, camera?.country].filter(Boolean).join(" · ") ||
-                "等待加载位置..."}
-            </span>
-          </div>
+
+          <CameraMetaPanel
+            meta={cameraMeta}
+            localTime={localTime}
+            timezone={activeTimezone}
+          />
         </div>
-
-        <CameraMetaPanel
-          meta={cameraMeta}
-          localTime={localTime}
-          tags={camera?.tags ?? []}
-          timezone={activeTimezone}
-          nextEvent={cameraMeta?.nextEvent ?? null}
-        />
-
-        <CameraActions
-          cameraId={camera?.id ?? null}
-          loading={loading}
-          onSwitchClick={handleSwitch}
-        />
       </div>
     </section>
   );
@@ -301,75 +310,67 @@ export function CameraViewer({ initialCamera }: Props) {
 function CameraMetaPanel({
   meta,
   localTime,
-  tags,
   timezone,
-  nextEvent,
 }: {
   meta: CameraMeta | null;
   localTime: string;
-  tags: string[];
   timezone: string | null;
-  nextEvent: CameraMeta["nextEvent"] | null;
 }) {
+  const displayEvent = pickUpcomingEvent(
+    meta?.nextEvent ?? null,
+    meta?.followingEvent ?? null
+  );
   const weatherText = meta
     ? describeWeather(meta?.weatherClass)
-    : { title: "等待天气数据", subtitle: "正在刷新最新情况", icon: "⏳" };
+    : { title: "Waiting for weather", subtitle: "Updating the forecast", icon: "⏳" };
   const timeWindow = describeTimeWindow(meta?.label);
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <div className="rounded-xl border border-orange-100 bg-gradient-to-br from-orange-50/50 to-amber-50/30 p-3 dark:border-orange-900/30 dark:from-orange-950/30 dark:to-amber-950/20">
-        <div className="flex items-center gap-1.5">
-          <span className="text-base">🎯</span>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600/80 dark:text-orange-400/80">
-            优先级
-          </p>
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="rounded-xl border border-orange-100 bg-gradient-to-br from-orange-50/60 to-amber-50/40 p-3 dark:border-orange-900/30 dark:from-orange-950/30 dark:to-amber-950/20">
+        <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-orange-600/80 dark:text-orange-400/80">
+          <span>🎯</span>
+          <span>Priority</span>
         </div>
-        <p className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+        <p className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
           {meta ? meta.score : "--"}
         </p>
-        <p className="mt-0.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">{timeWindow}</p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">{timeWindow}</p>
       </div>
 
-      <div className="rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50/50 to-blue-50/30 p-3 dark:border-sky-900/30 dark:from-sky-950/30 dark:to-blue-950/20">
-        <div className="flex items-center gap-1.5">
-          <span className="text-base">{weatherText.icon}</span>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-600/80 dark:text-sky-400/80">
-            天气
-          </p>
+      <div className="rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50/60 to-blue-50/40 p-3 dark:border-sky-900/30 dark:from-sky-950/30 dark:to-blue-950/20">
+        <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-sky-600/80 dark:text-sky-400/80">
+          <span>{weatherText.icon}</span>
+          <span>Weather</span>
         </div>
-        <p className="mt-2 text-base font-bold text-zinc-900 dark:text-zinc-50">
+        <p className="mt-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
           {weatherText.title}
         </p>
-        <p className="mt-0.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">{weatherText.subtitle}</p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">{weatherText.subtitle}</p>
       </div>
 
-      <div className="rounded-xl border border-rose-100 bg-gradient-to-br from-rose-50/50 to-pink-50/30 p-3 dark:border-rose-900/30 dark:from-rose-950/30 dark:to-pink-950/20">
-        <div className="flex items-center gap-1.5">
-          <span className="text-base">🌅</span>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-rose-600/80 dark:text-rose-400/80">
-            日出日落
-          </p>
+      <div className="rounded-xl border border-rose-100 bg-gradient-to-br from-rose-50/60 to-pink-50/40 p-3 dark:border-rose-900/30 dark:from-rose-950/30 dark:to-pink-950/20">
+        <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-rose-600/80 dark:text-rose-400/80">
+          <span>🌅</span>
+          <span>Sun event</span>
         </div>
-        <p className="mt-2 text-base font-bold text-zinc-900 dark:text-zinc-50">
-          {describeEventTitle(nextEvent)}
+        <p className="mt-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
+          {describeEventTitle(displayEvent)}
         </p>
-        <p className="mt-0.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-          {describeEventTime(nextEvent, timezone)}
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          {describeEventTime(displayEvent, timezone)}
         </p>
       </div>
 
-      <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/50 to-purple-50/30 p-3 dark:border-violet-900/30 dark:from-violet-950/30 dark:to-purple-950/20">
-        <div className="flex items-center gap-1.5">
-          <span className="text-base">🕐</span>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-600/80 dark:text-violet-400/80">
-            当地时间
-          </p>
+      <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/60 to-purple-50/40 p-3 dark:border-violet-900/30 dark:from-violet-950/30 dark:to-purple-950/20">
+        <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-violet-600/80 dark:text-violet-400/80">
+          <span>🕐</span>
+          <span>Local time</span>
         </div>
-        <p className="mt-2 text-base font-bold text-zinc-900 dark:text-zinc-50">
+        <p className="mt-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
           {localTime || "--"}
         </p>
-        <p className="mt-0.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-          {timezone ? `${timezone}` : "无时区信息"}
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          {timezone ?? "No timezone"}
         </p>
       </div>
     </div>
@@ -379,34 +380,34 @@ function CameraMetaPanel({
 function describeWeather(weatherClass?: string | null) {
   switch (weatherClass) {
     case "clear":
-      return { title: "晴朗", subtitle: "天空通透，色彩最佳", icon: "☀️" };
+      return { title: "Clear skies", subtitle: "Crisp colors guaranteed", icon: "☀️" };
     case "partly-cloudy":
-      return { title: "局部多云", subtitle: "有云层，但仍可能有霞光", icon: "⛅" };
+      return { title: "Partly cloudy", subtitle: "Cloud drama possible", icon: "⛅" };
     case "light-snow":
-      return { title: "轻微降雪", subtitle: "雪花增添独特氛围", icon: "🌨️" };
+      return { title: "Light snow", subtitle: "Snowflakes add atmosphere", icon: "🌨️" };
     case "other":
     default:
-      return { title: "多云或降水", subtitle: "可能影响日落观感", icon: "☁️" };
+      return { title: "Clouds or rain", subtitle: "Sunset glow may be muted", icon: "☁️" };
   }
 }
 
 function describeTimeWindow(label?: string | null) {
   switch (label) {
     case "sunset-primary":
-      return "黄金日落时段";
+      return "Golden sunset window";
     case "sunrise-primary":
-      return "黄金日出时段";
+      return "Golden sunrise window";
     case "sunset-extended":
-      return "日落延伸时段";
+      return "Sunset extended view";
     case "sunrise-extended":
-      return "日出延伸时段";
+      return "Sunrise extended view";
     case "clear-day":
-      return "白天晴朗";
+      return "Clear daytime";
     case "city-skyline-night":
-      return "城市夜景晴朗";
+      return "City skyline at night";
     case "night":
     default:
-      return "夜间或阴天";
+      return "Nighttime / overcast";
   }
 }
 
@@ -414,9 +415,9 @@ function describeEventTitle(
   nextEvent: CameraMeta["nextEvent"] | null
 ) {
   if (!nextEvent) {
-    return "等待数据";
+    return "Waiting for data";
   }
-  return nextEvent.type === "sunrise" ? "日出" : "日落";
+  return nextEvent.type === "sunrise" ? "Sunrise" : "Sunset";
 }
 
 function describeEventTime(
@@ -424,10 +425,10 @@ function describeEventTime(
   timezone: string | null
 ) {
   if (!nextEvent || !timezone) {
-    return "暂无";
+    return "No schedule";
   }
   try {
-    const formatter = new Intl.DateTimeFormat("zh-CN", {
+    const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       hour: "2-digit",
       minute: "2-digit",
@@ -438,25 +439,66 @@ function describeEventTime(
     });
     return formatter.format(new Date(nextEvent.timeISO));
   } catch {
-    return "时间格式错误";
+    return "Invalid time";
   }
+}
+
+function pickUpcomingEvent(
+  nextEvent: CameraMeta["nextEvent"] | null,
+  followingEvent: CameraMeta["followingEvent"] | null
+) {
+  const events = [nextEvent, followingEvent].filter(Boolean) as Array<
+    NonNullable<CameraMeta["nextEvent"]>
+  >;
+  if (!events.length) {
+    return null;
+  }
+  const now = Date.now();
+  const parsed = events
+    .map((event) => ({
+      event,
+      timestamp: Date.parse(event.timeISO),
+    }))
+    .filter((entry) => !Number.isNaN(entry.timestamp))
+    .sort((a, b) => a.timestamp - b.timestamp);
+  if (!parsed.length) {
+    return null;
+  }
+  const future = parsed.find((entry) => entry.timestamp >= now);
+  return future?.event ?? parsed[parsed.length - 1].event;
 }
 
 function CameraActions({
   cameraId,
   loading,
   onSwitchClick,
+  layout = "stacked",
 }: {
   cameraId: string | null;
   loading: boolean;
   onSwitchClick: () => void;
+  layout?: "stacked" | "inline";
 }) {
   const [creating, setCreating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const containerClasses =
+    layout === "inline"
+      ? "flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end"
+      : "flex flex-col gap-2";
+  const primaryButtonClasses = `${
+    layout === "inline" ? "w-full px-5 py-2.5 sm:w-auto" : "w-full px-6 py-3"
+  } group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 text-sm font-semibold text-white shadow-lg shadow-orange-500/25 transition-all hover:shadow-xl hover:shadow-orange-500/40 disabled:cursor-not-allowed disabled:from-zinc-300 disabled:to-zinc-400 disabled:shadow-none dark:from-orange-600 dark:to-rose-600 dark:shadow-orange-600/20 dark:hover:shadow-orange-600/30 dark:disabled:from-zinc-700 dark:disabled:to-zinc-600`;
+  const secondaryButtonClasses = `${
+    layout === "inline" ? "w-full px-5 py-2.5 sm:w-auto" : "w-full px-6 py-3"
+  } group flex items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-700 shadow-sm transition-all hover:border-zinc-300 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 disabled:hover:bg-white dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-600 dark:disabled:border-zinc-700 dark:disabled:text-zinc-600 dark:disabled:hover:bg-zinc-700`;
+  const errorClasses = `${
+    layout === "inline" ? "text-right" : ""
+  } rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600 dark:bg-red-950/30 dark:text-red-400`;
+
   const handleCreateRoom = async () => {
     if (!cameraId) {
-      setActionError("当前没有可用摄像头");
+      setActionError("No camera available right now.");
       return;
     }
 
@@ -476,18 +518,18 @@ function CameraActions({
       const data = (await response.json()) as { roomId: string };
       window.location.href = `/room/${data.roomId}?camera=${cameraId}`;
     } catch {
-      setActionError("创建房间失败，请稍后再试");
+      setActionError("Failed to create a room. Please try again later.");
     } finally {
       setCreating(false);
     }
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className={containerClasses}>
       <button
         onClick={onSwitchClick}
         disabled={loading}
-        className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-500/25 transition-all hover:shadow-xl hover:shadow-orange-500/40 disabled:cursor-not-allowed disabled:from-zinc-300 disabled:to-zinc-400 disabled:shadow-none dark:from-orange-600 dark:to-rose-600 dark:shadow-orange-600/20 dark:hover:shadow-orange-600/30 dark:disabled:from-zinc-700 dark:disabled:to-zinc-600"
+        className={primaryButtonClasses}
       >
         <span className="relative z-10 flex items-center gap-2">
           {loading ? (
@@ -496,14 +538,14 @@ function CameraActions({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              切换中…
+              Switching…
             </>
           ) : (
             <>
               <svg className="h-4 w-4 transition-transform group-hover:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              切换摄像头
+              Next camera
             </>
           )}
         </span>
@@ -512,7 +554,7 @@ function CameraActions({
       <button
         onClick={handleCreateRoom}
         disabled={!cameraId || creating}
-        className="group flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-6 py-3 text-sm font-semibold text-zinc-700 shadow-sm transition-all hover:border-zinc-300 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 disabled:hover:bg-white dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-600 dark:disabled:border-zinc-700 dark:disabled:text-zinc-600 dark:disabled:hover:bg-zinc-700"
+        className={secondaryButtonClasses}
       >
         {creating ? (
           <>
@@ -520,19 +562,19 @@ function CameraActions({
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            创建房间中…
+            Creating room…
           </>
         ) : (
           <>
             <svg className="h-4 w-4 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
-            邀请朋友一起看
+            Watch with friends
           </>
         )}
       </button>
       {actionError && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600 dark:bg-red-950/30 dark:text-red-400" role="alert">
+        <p className={errorClasses} role="alert">
           {actionError}
         </p>
       )}

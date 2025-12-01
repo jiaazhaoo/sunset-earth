@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 const OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-type OpenMeteoResponse = {
+export type OpenMeteoResponse = {
   latitude: number;
   longitude: number;
   timezone: string;
@@ -52,6 +52,7 @@ export type CameraEvaluation = {
   isDaytime?: boolean | null;
   weatherClass?: WeatherClass;
   nextEvent?: SolarEvent | null;
+  followingEvent?: SolarEvent | null;
 };
 
 const weatherCache = new Map<string, CachedEntry>();
@@ -112,6 +113,17 @@ export async function fetchWeatherSnapshot(
   }
 
   return refreshWeatherSnapshot(key, lat, lng);
+}
+
+export async function getCachedWeatherSnapshot(
+  cacheSlug: string
+): Promise<OpenMeteoResponse | null> {
+  const cached = weatherCache.get(cacheSlug);
+  if (cached) {
+    return cached.data;
+  }
+  const persistent = await loadWeatherCache(cacheSlug);
+  return persistent?.data ?? null;
 }
 
 async function refreshWeatherSnapshot(
@@ -247,7 +259,9 @@ export function scoreCameraWeather(
   const baseScore = timeWeights[timeTier.tier] ?? 0;
   const adjustedQuality = 0.4 + 0.6 * qualityScore;
   const score = Math.round(baseScore * weatherWeight * adjustedQuality);
-  const nextEvent = findNextSolarEvent(weather, now);
+  const upcomingEvents = findUpcomingSolarEvents(weather, now, 2);
+  const nextEvent = upcomingEvents[0] ?? null;
+  const followingEvent = upcomingEvents[1] ?? null;
 
   return {
     score,
@@ -257,6 +271,7 @@ export function scoreCameraWeather(
     isDaytime,
     weatherClass,
     nextEvent,
+    followingEvent,
   };
 }
 
@@ -600,14 +615,14 @@ function buildWindows({
         score: 100,
         priority: 1,
         startMs: sunsetMs - 60 * MINUTE,
-        endMs: sunsetMs + 15 * MINUTE,
+        endMs: sunsetMs + 5 * MINUTE,
       },
       {
         label: "sunset-extended",
         score: 80,
         priority: 2,
         startMs: sunsetMs - 90 * MINUTE,
-        endMs: sunsetMs + 60 * MINUTE,
+        endMs: sunsetMs + 10 * MINUTE,
       }
     );
   }
@@ -661,6 +676,15 @@ function findNextSolarEvent(
   weather: OpenMeteoResponse,
   now: Date
 ): SolarEvent | null {
+  const [next] = findUpcomingSolarEvents(weather, now, 1);
+  return next ?? null;
+}
+
+function findUpcomingSolarEvents(
+  weather: OpenMeteoResponse,
+  now: Date,
+  count: number
+): SolarEvent[] {
   const events: SolarEvent[] = [];
   const sunrises = weather.daily?.sunrise ?? [];
   const sunsets = weather.daily?.sunset ?? [];
@@ -678,19 +702,36 @@ function findNextSolarEvent(
     }
   }
 
-  const nowMs = now.getTime();
-  const future = events
-    .filter((event) => event.time.getTime() >= nowMs)
-    .sort((a, b) => a.time.getTime() - b.time.getTime());
-  if (future.length) {
-    return future[0];
+  if (!events.length) {
+    return [];
   }
 
-  if (events.length) {
-    const sorted = events.sort(
-      (a, b) => a.time.getTime() - b.time.getTime()
-    );
-    return sorted[0];
+  events.sort((a, b) => a.time.getTime() - b.time.getTime());
+  const nowMs = now.getTime();
+  const future = events.filter((event) => event.time.getTime() >= nowMs);
+
+  if (future.length >= count) {
+    return future.slice(0, count);
   }
-  return null;
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const result = [...future];
+  let pointer = 0;
+  while (result.length < count) {
+    const base = events[pointer % events.length];
+    const lastTime = result.length
+      ? result[result.length - 1].time.getTime()
+      : nowMs;
+    let candidate = base.time.getTime();
+    while (candidate <= lastTime) {
+      candidate += DAY_MS;
+    }
+    result.push({ type: base.type, time: new Date(candidate) });
+    pointer++;
+    if (pointer > events.length * 4) {
+      break;
+    }
+  }
+
+  return result.slice(0, count);
 }

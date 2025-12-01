@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS camera_rankings (
   sunset TIMESTAMPTZ,
   next_event_type TEXT,
   next_event_time TIMESTAMPTZ,
+  following_event_type TEXT,
+  following_event_time TIMESTAMPTZ,
   available BOOLEAN DEFAULT true,
   computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 

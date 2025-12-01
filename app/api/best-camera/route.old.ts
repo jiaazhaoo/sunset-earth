@@ -176,6 +176,7 @@ async function buildCameraEntry(
 }
 
 function buildMeta(entry: CameraEntry) {
+  const events = formatUpcomingEvents(entry.evaluation);
   return {
     cameraId: entry.camera.id,
     score: entry.evaluation.score,
@@ -186,11 +187,32 @@ function buildMeta(entry: CameraEntry) {
     timezone: entry.weatherSnapshot.timezone,
     sunrise: entry.weatherSnapshot.sunrise,
     sunset: entry.weatherSnapshot.sunset,
-    nextEvent: entry.evaluation.nextEvent
-      ? {
-          type: entry.evaluation.nextEvent.type,
-          timeISO: entry.evaluation.nextEvent.time.toISOString(),
-        }
-      : null,
+    nextEvent: events[0] ?? null,
+    followingEvent: events[1] ?? null,
   };
+}
+
+function formatUpcomingEvents(evaluation: CameraEvaluation) {
+  type EvaluationEvent = NonNullable<CameraEvaluation["nextEvent"]>;
+  const events = [evaluation.nextEvent, evaluation.followingEvent].filter(
+    Boolean
+  ) as EvaluationEvent[];
+  if (!events.length) {
+    return [];
+  }
+
+  const now = Date.now();
+  const sorted = events
+    .map((event) => ({
+      type: event.type,
+      timestamp: event.time.getTime(),
+    }))
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  const future = sorted.filter((event) => event.timestamp >= now);
+  const ordered = future.length ? future : sorted;
+  return ordered.map((event) => ({
+    type: event.type,
+    timeISO: new Date(event.timestamp).toISOString(),
+  }));
 }

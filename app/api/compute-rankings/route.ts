@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listCameras } from "@/lib/cameras";
-import { fetchWeatherSnapshot, scoreCameraWeather } from "@/lib/weather";
+import {
+  getCachedWeatherSnapshot,
+  scoreCameraWeather,
+} from "@/lib/weather";
 import { isCameraAvailable } from "@/lib/availability";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
@@ -88,12 +91,17 @@ export async function GET(request: NextRequest) {
             continue;
           }
 
-          // Fetch weather (uses cache if available)
-          const weather = await fetchWeatherSnapshot(
-            camera.lat,
-            camera.lng,
-            camera.id
-          );
+          // Load cached weather; skip if missing
+          const weather = await getCachedWeatherSnapshot(camera.id);
+          if (!weather) {
+            summary.skipped++;
+            summary.details.push({
+              id: camera.id,
+              status: "skipped",
+              reason: "missing-weather-cache",
+            });
+            continue;
+          }
 
           // Score the camera
           const hasCitySkyline = camera.tags?.some((tag) =>
@@ -116,6 +124,8 @@ export async function GET(request: NextRequest) {
             sunset: weather.daily?.sunset?.[0],
             nextEventType: evaluation.nextEvent?.type,
             nextEventTime: evaluation.nextEvent?.time,
+            followingEventType: evaluation.followingEvent?.type,
+            followingEventTime: evaluation.followingEvent?.time,
             available: true,
             computedAt: now,
           });
@@ -164,6 +174,8 @@ type RankingData = {
   sunset?: string;
   nextEventType?: string;
   nextEventTime?: Date;
+  followingEventType?: string;
+  followingEventTime?: Date;
   available: boolean;
   computedAt: Date;
 };
@@ -182,6 +194,8 @@ async function upsertRanking(data: RankingData) {
       sunset: data.sunset ? new Date(data.sunset).toISOString() : null,
       next_event_type: data.nextEventType ?? null,
       next_event_time: data.nextEventTime?.toISOString() ?? null,
+      following_event_type: data.followingEventType ?? null,
+      following_event_time: data.followingEventTime?.toISOString() ?? null,
       available: data.available,
       computed_at: data.computedAt.toISOString(),
     },

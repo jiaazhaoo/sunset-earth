@@ -99,8 +99,6 @@ export async function GET(request: NextRequest) {
       chainStatus: {
         refreshLinks: "success",
         replaceLink: "pending",
-        weatherCache: "pending",
-        computeRankings: "pending",
       },
     };
 
@@ -122,8 +120,6 @@ export async function GET(request: NextRequest) {
           errorText
         );
         result.chainStatus.replaceLink = "failed";
-        result.chainStatus.weatherCache = "skipped";
-        result.chainStatus.computeRankings = "skipped";
         return NextResponse.json(result, { status: 207 }); // 207 Multi-Status
       }
 
@@ -131,9 +127,9 @@ export async function GET(request: NextRequest) {
       console.log("[refresh-links] successfully triggered replace-link");
     } catch (error) {
       console.error("[refresh-links] failed to trigger replace-link:", error);
-      result.chainStatus.replaceLink = "failed";
-      result.chainStatus.weatherCache = "skipped";
-      result.chainStatus.computeRankings = "skipped";
+      if (result.chainStatus.replaceLink === "pending") {
+        result.chainStatus.replaceLink = "failed";
+      }
       return NextResponse.json(result, { status: 207 });
     }
 
