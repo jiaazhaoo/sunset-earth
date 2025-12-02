@@ -346,18 +346,7 @@ function CameraMetaPanel({
     : { title: "Waiting for weather", subtitle: "Updating the forecast", icon: "⏳" };
   const timeWindow = describeTimeWindow(meta?.label);
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-      <div className="rounded-xl border border-orange-100 bg-gradient-to-br from-orange-50/60 to-amber-50/40 p-3 dark:border-orange-900/30 dark:from-orange-950/30 dark:to-amber-950/20">
-        <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-orange-600/80 dark:text-orange-400/80">
-          <span>🎯</span>
-          <span>Priority</span>
-        </div>
-        <p className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-          {meta ? meta.score : "--"}
-        </p>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">{timeWindow}</p>
-      </div>
-
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
       <div className="rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50/60 to-blue-50/40 p-3 dark:border-sky-900/30 dark:from-sky-950/30 dark:to-blue-950/20">
         <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-sky-600/80 dark:text-sky-400/80">
           <span>{weatherText.icon}</span>
