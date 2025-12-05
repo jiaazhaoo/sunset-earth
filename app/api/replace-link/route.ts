@@ -94,7 +94,11 @@ export async function GET(request: NextRequest) {
     try {
       const baseUrl = request.nextUrl.origin;
       console.log("[replace-link] triggering weather-cache...");
-      const weatherResponse = await fetch(`${baseUrl}/api/weather-cache`, {
+      const weatherUrl = buildBypassUrl(
+        `${baseUrl}/api/weather-cache`,
+        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+      );
+      const weatherResponse = await fetch(weatherUrl, {
         headers: {
           Authorization: `Bearer ${process.env.CRON_SECRET}`,
         },
@@ -129,4 +133,14 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function buildBypassUrl(url: string, bypassSecret?: string) {
+  if (!bypassSecret) {
+    return url;
+  }
+  const parsed = new URL(url);
+  parsed.searchParams.set("x-vercel-set-bypass-cookie", "true");
+  parsed.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+  return parsed.toString();
 }

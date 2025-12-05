@@ -43,16 +43,22 @@ export async function GET(request: NextRequest) {
       for (const camera of batch) {
         summary.checked++;
         try {
+          const checkedAt = new Date().toISOString();
           const availability = await isCameraAvailable(camera);
           if (availability.available) {
+            const updates: Record<string, unknown> = {
+              last_check: checkedAt,
+            };
             if (!camera.linkAvailable) {
-              await supabaseAdmin
-                .from("camera_ytb")
-                .update({
-                  link_available: true,
-                  last_check: new Date().toISOString(),
-                })
-                .eq("camera_id", camera.id);
+              updates.link_available = true;
+            }
+
+            await supabaseAdmin
+              .from("camera_ytb")
+              .update(updates)
+              .eq("camera_id", camera.id);
+
+            if (!camera.linkAvailable) {
               summary.markedAvailable++;
               summary.details.push({
                 id: camera.id,
@@ -65,7 +71,7 @@ export async function GET(request: NextRequest) {
           summary.unavailableReasons[availability.reason] =
             (summary.unavailableReasons[availability.reason] ?? 0) + 1;
 
-          await markUnavailable(camera.id);
+          await markUnavailable(camera.id, checkedAt);
           summary.markedUnavailable++;
           summary.details.push({
             id: camera.id,
@@ -98,7 +104,11 @@ export async function GET(request: NextRequest) {
     try {
       const baseUrl = request.nextUrl.origin;
       console.log("[refresh-links] triggering replace-link...");
-      const replaceResponse = await fetch(`${baseUrl}/api/replace-link`, {
+      const replaceUrl = buildBypassUrl(
+        `${baseUrl}/api/replace-link`,
+        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+      );
+      const replaceResponse = await fetch(replaceUrl, {
         headers: {
           Authorization: `Bearer ${process.env.CRON_SECRET}`,
         },
@@ -135,16 +145,26 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function markUnavailable(cameraId: string) {
+async function markUnavailable(cameraId: string, checkedAt: string) {
   const { error } = await supabaseAdmin
     .from("camera_ytb")
     .update({
       link_available: false,
-      last_check: new Date().toISOString(),
+      last_check: checkedAt,
     })
     .eq("camera_id", cameraId);
 
   if (error) {
     throw new Error(error.message);
   }
+}
+
+function buildBypassUrl(url: string, bypassSecret?: string) {
+  if (!bypassSecret) {
+    return url;
+  }
+  const parsed = new URL(url);
+  parsed.searchParams.set("x-vercel-set-bypass-cookie", "true");
+  parsed.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+  return parsed.toString();
 }
