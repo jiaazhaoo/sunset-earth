@@ -19,7 +19,7 @@ Use this doc to brief AI coding partners (or new engineers) so they can jump dir
 ## 1. Mission & Narrative
 - **Product:** A curated TV-like experience for watching the world’s best golden-hour live streams (sunrise/sunset, skyline views, scenic vistas).
 - **Promise:** Always show a camera that is likely stunning *right now* based on weather, daylight, availability, and prior user rotation.
-- **Users can:**
+- **Users can:**![1764634119053](image/PROJECT_ORIENTATION/1764634119053.png)
   1. Visit the homepage to immediately watch the top-ranked feed.
   2. Cycle through other high-quality cameras (localStorage tracks what’s “seen”).
   3. Spin up shared rooms with presence and optional voice integration.
@@ -50,12 +50,15 @@ Use this doc to brief AI coding partners (or new engineers) so they can jump dir
 | --- | --- |
 | `app/page.tsx` | Entry point. Reads `camera_rankings` → picks best camera or random fallback. |
 | `components/camera-viewer.tsx` | Main UI: iframe, metadata cards, rotation + room controls, localStorage state. |
-| `app/api/best-camera/route.ts` | Returns `{ camera, meta, rotationReset }`. Reads rankings, enforces freshness, handles exclusions. |
-| `app/api/compute-rankings/route.ts` | Cron worker. Iterates `camera_ytb`, checks availability, fetches weather, calls `scoreCameraWeather`, and upserts `camera_rankings`. |
+| `app/api/best-camera/route.ts` | Returns `{ camera, meta, rotationReset }`. Reads rankings with secondary sorting, enforces freshness, handles exclusions. |
+| `app/api/compute-rankings/route.ts` | Cron worker with task lock. Iterates `camera_ytb`, checks availability, fetches weather, calls `scoreCameraWeather`, and upserts `camera_rankings`. |
+| `app/api/weather-cache/route.ts` | Cron worker with task lock. Fetches weather data for all cameras, triggers `compute-rankings` on completion. |
 | `lib/weather.ts` | Weather fetch, caching, scoring, solar window detection. Emits `nextEvent` & `followingEvent` to avoid stale sun times. |
+| `lib/task-lock.ts` | Distributed locking utilities (`acquireTaskLock`, `releaseTaskLock`, `withTaskLock`) for preventing race conditions. |
 | `app/api/refresh-links` & `app/api/refresh-camera` | Periodic link validation & replacement via YouTube host channels. |
 | `app/room/[roomId]/page.tsx` + `components/realtime-sidebar.tsx` | Shared watch experience and realtime presence integration. |
-| `supabase/migrations/create_camera_rankings.sql` | Base schema for ranking table. Additive migrations (e.g., `20250312_add_following_events.sql`) extend it. |
+| `supabase/migrations/create_camera_rankings.sql` | Base schema for ranking table. |
+| `supabase/migrations/20250312_add_task_locks.sql` | Task locks table for distributed locking. |
 | `scripts/check-cameras.ts` / `scripts/run-replace.ts` | Local tooling for health checks and batch refresh. |
 
 ---
@@ -115,6 +118,20 @@ Use this doc to brief AI coding partners (or new engineers) so they can jump dir
 | `room_type` | Variation (sunset, sunrise, etc.). |
 | `last_empty_at`, `is_close` | Presence-based auto-closing logic. |
 
+### 5.5 Task Locks table (`task_locks`)
+| Column | Purpose |
+| --- | --- |
+| `task_name` | Primary key; identifies the task (e.g., "weather-cache", "compute-rankings"). |
+| `locked_at` | Timestamp when lock was acquired. |
+| `locked_by` | Optional identifier of process holding the lock. |
+| `expires_at` | TTL for automatic cleanup (default 10 minutes). Prevents deadlocks. |
+
+**Purpose**: Distributed locking mechanism to prevent race conditions in cron jobs.
+- `weather-cache` and `compute-rankings` both use task locks
+- Prevents concurrent executions across serverless instances
+- Auto-expiring locks prevent permanent deadlocks
+- See `lib/task-lock.ts` for implementation
+
 ---
 
 ## 6. End-to-End Workflows
@@ -123,12 +140,20 @@ Use this doc to brief AI coding partners (or new engineers) so they can jump dir
    - `refresh-links` iterates through cameras, runs `isCameraAvailable`, flips `link_available`, marks reasons, and cleans empty rooms.
    - On success it immediately calls `/api/replace-link` to attempt repairing broken streams via `refreshCamera`.
 2. **Stage B – Weather/Sun Harvest (`/api/weather-cache`)**
+   - **Task Lock Protection**: Uses distributed lock (`task_locks` table) to prevent concurrent execution.
    - Iterates cameras (200/batch), calling `fetchWeatherSnapshot` to populate `camera_weather_cache`, `camera_weather_history`, `camera_sun_cache`, etc.
    - Runs via its own every-3-hour cron (or manual trigger) independent of refresh-links, and upon completion it pings `/api/compute-rankings` to start scoring.
 3. **Stage C – Ranking Compute (`/api/compute-rankings`)**
+   - **Race Condition Prevention**: Checks if `weather-cache` is still running; skips execution if locked to avoid stale data.
+   - **Task Lock Protection**: Uses its own distributed lock to prevent concurrent ranking computation.
    - Runs automatically after weather-cache **and** via a standalone 5-minute cron so scores stay fresh between chained runs.
-   - Uses latest `link_available` flags and cached weather snapshots to skip unavailable cameras.
-   - Scores the rest via `scoreCameraWeather` (time tier × weather quality) and upserts `camera_rankings` with `next/following_event_*`, `label`, `weather_class`, etc.
+   - Uses latest `link_available` flags and cached weather snapshots.
+   - **Consistent Data Handling**: All cameras get updated `computed_at` timestamp, including:
+     - Unavailable cameras: `score=0, available=false`
+     - Missing weather cache: `score=0, available=false`
+     - Available cameras: Computed score via `scoreCameraWeather`
+   - Scores via `scoreCameraWeather` (time tier × weather quality) and upserts `camera_rankings` with `next/following_event_*`, `label`, `weather_class`, etc.
+   - **Secondary Sorting**: Rankings sorted by `score DESC, distance_minutes ASC` to break ties and prioritize cameras closer to golden hour.
 
 ### 6.2 Homepage Load → Camera Viewer
 1. **`app/page.tsx`** runs on the server: queries `camera_rankings` for best available row (honouring optional exclusion set) via `supabaseAdmin`.

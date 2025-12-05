@@ -6,6 +6,7 @@ import {
 } from "@/lib/weather";
 import { isCameraAvailable } from "@/lib/availability";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { isTaskLocked, withTaskLock } from "@/lib/task-lock";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -24,137 +25,38 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const now = new Date();
-    let offset = 0;
-    const summary = {
-      processed: 0,
-      updated: 0,
-      skipped: 0,
-      errors: 0,
-      details: [] as Array<{
-        id: string;
-        status: "updated" | "skipped" | "error";
-        score?: number;
-        reason?: string;
-      }>,
-    };
-
-    while (true) {
-      const batch = await listCameras(BATCH_SIZE, offset);
-      if (!batch.length) {
-        break;
-      }
-      offset += batch.length;
-
-      for (const camera of batch) {
-        summary.processed++;
-
-        try {
-          // Skip cameras without coordinates
-          if (camera.lat === null || camera.lng === null) {
-            summary.skipped++;
-            summary.details.push({
-              id: camera.id,
-              status: "skipped",
-              reason: "missing-coordinates",
-            });
-            continue;
-          }
-
-          // Skip explicitly disabled cameras
-          if (camera.linkAvailable === false) {
-            summary.skipped++;
-            summary.details.push({
-              id: camera.id,
-              status: "skipped",
-              reason: "link-unavailable",
-            });
-            continue;
-          }
-
-          // Check availability (uses cache if available)
-          const availability = await isCameraAvailable(camera);
-          if (!availability.available) {
-            // Store as unavailable
-            await upsertRanking({
-              cameraId: camera.id,
-              score: 0,
-              available: false,
-              computedAt: now,
-            });
-            summary.skipped++;
-            summary.details.push({
-              id: camera.id,
-              status: "skipped",
-              reason: `unavailable-${availability.reason}`,
-            });
-            continue;
-          }
-
-          // Load cached weather; skip if missing
-          const weather = await getCachedWeatherSnapshot(camera.id);
-          if (!weather) {
-            summary.skipped++;
-            summary.details.push({
-              id: camera.id,
-              status: "skipped",
-              reason: "missing-weather-cache",
-            });
-            continue;
-          }
-
-          // Score the camera
-          const hasCitySkyline = camera.tags?.some((tag) =>
-            tag.toLowerCase().includes("city skyline")
-          );
-          const evaluation = scoreCameraWeather(weather, now, {
-            hasCitySkyline,
-            sunsetDelayMinutes: camera.sunsetDelay ?? 0,
-            sunriseAdvanceMinutes: camera.sunriseAdvance ?? 0,
-          });
-
-          // Store ranking
-          await upsertRanking({
-            cameraId: camera.id,
-            score: evaluation.score,
-            label: evaluation.label,
-            distanceMinutes: evaluation.distanceMinutes,
-            isClear: evaluation.isClear,
-            weatherClass: evaluation.weatherClass,
-            timezone: weather.timezone,
-            sunrise: weather.daily?.sunrise?.[0],
-            sunset: weather.daily?.sunset?.[0],
-            nextEventType: evaluation.nextEvent?.type,
-            nextEventTime: evaluation.nextEvent?.time,
-            followingEventType: evaluation.followingEvent?.type,
-            followingEventTime: evaluation.followingEvent?.time,
-            available: true,
-            computedAt: now,
-          });
-
-          summary.updated++;
-          summary.details.push({
-            id: camera.id,
-            status: "updated",
-            score: evaluation.score,
-          });
-        } catch (error) {
-          summary.errors++;
-          summary.details.push({
-            id: camera.id,
-            status: "error",
-            reason: error instanceof Error ? error.message : "unknown-error",
-          });
-          console.warn(
-            "[compute-rankings] failed for camera",
-            camera.id,
-            error
-          );
-        }
-      }
+    // Check if weather-cache is still running
+    const weatherCacheRunning = await isTaskLocked("weather-cache");
+    if (weatherCacheRunning) {
+      console.log("[compute-rankings] waiting: weather-cache is still running");
+      return NextResponse.json(
+        {
+          skipped: true,
+          reason: "weather-cache is still running, will retry later"
+        },
+        { status: 409 }
+      );
     }
 
-    return NextResponse.json(summary);
+    // Execute with task lock to prevent concurrent execution
+    const lockResult = await withTaskLock(
+      "compute-rankings",
+      async () => executeComputeRankings(),
+      { ttlSeconds: 600, lockedBy: "compute-rankings-cron" }
+    );
+
+    if (!lockResult.success) {
+      console.warn("[compute-rankings] skipped:", lockResult.reason);
+      return NextResponse.json(
+        {
+          skipped: true,
+          reason: lockResult.reason
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(lockResult.result);
   } catch (error) {
     console.error("[compute-rankings]", error);
     return NextResponse.json(
@@ -162,6 +64,147 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+async function executeComputeRankings() {
+  const now = new Date();
+  let offset = 0;
+  const summary = {
+    processed: 0,
+    updated: 0,
+    skipped: 0,
+    errors: 0,
+    details: [] as Array<{
+      id: string;
+      status: "updated" | "skipped" | "error";
+      score?: number;
+      reason?: string;
+    }>,
+  };
+
+  while (true) {
+    const batch = await listCameras(BATCH_SIZE, offset);
+    if (!batch.length) {
+      break;
+    }
+    offset += batch.length;
+
+    for (const camera of batch) {
+      summary.processed++;
+
+      try {
+        // Skip cameras without coordinates
+        if (camera.lat === null || camera.lng === null) {
+          summary.skipped++;
+          summary.details.push({
+            id: camera.id,
+            status: "skipped",
+            reason: "missing-coordinates",
+          });
+          continue;
+        }
+
+        // Skip explicitly disabled cameras
+        if (camera.linkAvailable === false) {
+          summary.skipped++;
+          summary.details.push({
+            id: camera.id,
+            status: "skipped",
+            reason: "link-unavailable",
+          });
+          continue;
+        }
+
+        // Check availability (uses cache if available)
+        const availability = await isCameraAvailable(camera);
+        if (!availability.available) {
+          // Store as unavailable
+          await upsertRanking({
+            cameraId: camera.id,
+            score: 0,
+            available: false,
+            computedAt: now,
+          });
+          summary.skipped++;
+          summary.details.push({
+            id: camera.id,
+            status: "skipped",
+            reason: `unavailable-${availability.reason}`,
+          });
+          continue;
+        }
+
+        // Load cached weather; skip if missing
+        const weather = await getCachedWeatherSnapshot(camera.id);
+        if (!weather) {
+          // Store as unavailable due to missing weather data
+          await upsertRanking({
+            cameraId: camera.id,
+            score: 0,
+            available: false,
+            computedAt: now,
+          });
+          summary.skipped++;
+          summary.details.push({
+            id: camera.id,
+            status: "skipped",
+            reason: "missing-weather-cache",
+          });
+          continue;
+        }
+
+        // Score the camera
+        const hasCitySkyline = camera.tags?.some((tag) =>
+          tag.toLowerCase().includes("city skyline")
+        );
+        const evaluation = scoreCameraWeather(weather, now, {
+          hasCitySkyline,
+          sunsetDelayMinutes: camera.sunsetDelay ?? 0,
+          sunriseAdvanceMinutes: camera.sunriseAdvance ?? 0,
+        });
+
+        // Store ranking
+        await upsertRanking({
+          cameraId: camera.id,
+          score: evaluation.score,
+          label: evaluation.label,
+          distanceMinutes: evaluation.distanceMinutes,
+          isClear: evaluation.isClear,
+          weatherClass: evaluation.weatherClass,
+          timezone: weather.timezone,
+          sunrise: weather.daily?.sunrise?.[0],
+          sunset: weather.daily?.sunset?.[0],
+          nextEventType: evaluation.nextEvent?.type,
+          nextEventTime: evaluation.nextEvent?.time,
+          followingEventType: evaluation.followingEvent?.type,
+          followingEventTime: evaluation.followingEvent?.time,
+          available: true,
+          computedAt: now,
+        });
+
+        summary.updated++;
+        summary.details.push({
+          id: camera.id,
+          status: "updated",
+          score: evaluation.score,
+        });
+      } catch (error) {
+        summary.errors++;
+        summary.details.push({
+          id: camera.id,
+          status: "error",
+          reason: error instanceof Error ? error.message : "unknown-error",
+        });
+        console.warn(
+          "[compute-rankings] failed for camera",
+          camera.id,
+          error
+        );
+      }
+    }
+  }
+
+  return summary;
 }
 
 type RankingData = {

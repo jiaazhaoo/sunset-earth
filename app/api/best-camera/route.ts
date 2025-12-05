@@ -73,6 +73,7 @@ async function findBestCameraFromRankings(exclude: Set<string>) {
     .eq("available", true)
     .gte("computed_at", freshnessThreshold.toISOString())  // Only fresh data
     .order("score", { ascending: false })
+    .order("distance_minutes", { ascending: true })  // Secondary sort: prefer cameras closer to golden hour
     .limit(100);
 
   if (exclusionList.length > 0) {
