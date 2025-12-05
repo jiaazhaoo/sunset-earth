@@ -115,5 +115,6 @@ function buildCameraStub(videoId: string, title?: string | null): CameraRecord {
     linkAvailable: true,
     sunsetDelay: 0,
     sunriseAdvance: 0,
+    lastCheck: null,
   };
 }

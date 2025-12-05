@@ -19,6 +19,7 @@ function makeCamera(videoId: string, title: string) {
     linkAvailable: true,
     sunsetDelay: 0,
     sunriseAdvance: 0,
+    lastCheck: null,
   };
   return camera;
 }
