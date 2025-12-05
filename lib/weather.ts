@@ -691,14 +691,6 @@ function determineDaytime(weather: OpenMeteoResponse, now: Date) {
   return null;
 }
 
-function findNextSolarEvent(
-  weather: OpenMeteoResponse,
-  now: Date
-): SolarEvent | null {
-  const [next] = findUpcomingSolarEvents(weather, now, 1);
-  return next ?? null;
-}
-
 function findUpcomingSolarEvents(
   weather: OpenMeteoResponse,
   now: Date,

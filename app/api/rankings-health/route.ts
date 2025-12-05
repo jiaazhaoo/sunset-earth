@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Get freshness stats
     const { data: stats, error: statsError } = await supabaseAdmin
@@ -50,6 +50,9 @@ export async function GET(request: NextRequest) {
       "get_avg_score",
       {}
     );
+    if (avgError) {
+      throw avgError;
+    }
 
     const health = {
       status:

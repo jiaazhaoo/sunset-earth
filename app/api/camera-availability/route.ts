@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
       .from("camera_ytb")
       .update({
         link_available: available,
+        last_check: new Date().toISOString(),
       })
       .eq("camera_id", cameraId);
 

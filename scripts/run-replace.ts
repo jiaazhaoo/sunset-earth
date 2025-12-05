@@ -3,38 +3,49 @@ import { listCameras } from "../lib/cameras";
 import { refreshCamera } from "../lib/cameraRefresh";
 
 loadEnv({ path: ".env.local" });
+const BATCH_SIZE = 200;
 
 async function main() {
-  const cameras = await listCameras(500);
-  const disabled = cameras.filter((camera) => camera.linkAvailable === false);
-
   const summary = {
-    checked: disabled.length,
+    checked: 0,
     refreshed: 0,
     failed: 0,
     details: [] as Array<{ id: string; updated: boolean; reason?: string }>,
   };
 
-  for (const camera of disabled) {
-    try {
-      const result = await refreshCamera(camera);
-      summary.details.push({
-        id: camera.id,
-        updated: result.updated,
-        reason: (result as { reason?: string }).reason,
-      });
-      if (result.updated) {
-        summary.refreshed++;
-      } else {
+  let offset = 0;
+  while (true) {
+    const batch = await listCameras(BATCH_SIZE, offset);
+    if (!batch.length) {
+      break;
+    }
+    offset += batch.length;
+
+    for (const camera of batch) {
+      if (camera.linkAvailable !== false) {
+        continue;
+      }
+      summary.checked++;
+      try {
+        const result = await refreshCamera(camera);
+        summary.details.push({
+          id: camera.id,
+          updated: result.updated,
+          reason: (result as { reason?: string }).reason,
+        });
+        if (result.updated) {
+          summary.refreshed++;
+        } else {
+          summary.failed++;
+        }
+      } catch (error) {
+        summary.details.push({
+          id: camera.id,
+          updated: false,
+          reason: error instanceof Error ? error.message : "unknown-error",
+        });
         summary.failed++;
       }
-    } catch (error) {
-      summary.details.push({
-        id: camera.id,
-        updated: false,
-        reason: error instanceof Error ? error.message : "unknown-error",
-      });
-      summary.failed++;
     }
   }
 

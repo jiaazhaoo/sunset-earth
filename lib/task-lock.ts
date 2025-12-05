@@ -25,7 +25,7 @@ export async function acquireTaskLock(
       .lt("expires_at", new Date().toISOString());
 
     // Try to insert a new lock
-    const { data, error } = await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from(TASK_LOCKS_TABLE)
       .insert({
         task_name: taskName,

@@ -350,7 +350,6 @@ function CameraMetaPanel({
   const weatherText = meta
     ? describeWeather(meta?.weatherClass)
     : { title: "Waiting for weather", subtitle: "Updating the forecast", icon: "⏳" };
-  const timeWindow = describeTimeWindow(meta?.label);
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
       <div className="rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50/60 to-blue-50/40 p-3 dark:border-sky-900/30 dark:from-sky-950/30 dark:to-blue-950/20">
@@ -404,26 +403,6 @@ function describeWeather(weatherClass?: string | null) {
     case "other":
     default:
       return { title: "Clouds or rain", subtitle: "Sunset glow may be muted", icon: "☁️" };
-  }
-}
-
-function describeTimeWindow(label?: string | null) {
-  switch (label) {
-    case "sunset-primary":
-      return "Golden sunset window";
-    case "sunrise-primary":
-      return "Golden sunrise window";
-    case "sunset-extended":
-      return "Sunset extended view";
-    case "sunrise-extended":
-      return "Sunrise extended view";
-    case "clear-day":
-      return "Clear daytime";
-    case "city-skyline-night":
-      return "City skyline at night";
-    case "night":
-    default:
-      return "Nighttime / overcast";
   }
 }
 

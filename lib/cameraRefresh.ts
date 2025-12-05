@@ -55,6 +55,7 @@ export async function refreshCamera(camera: CameraRecord) {
         link: newLink,
         ytb_title: live.title,
         link_available: true,
+        last_check: new Date().toISOString(),
       })
       .eq("camera_id", camera.id);
 

@@ -2,6 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCameraById, getRandomCamera } from "@/lib/cameras";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+type SolarEventType = "sunrise" | "sunset";
+
+type RankingRow = {
+  camera_id: string;
+  score: number | null;
+  label: string | null;
+  is_clear: boolean | null;
+  distance_minutes: number | null;
+  weather_class: string | null;
+  timezone: string | null;
+  sunrise: string | null;
+  sunset: string | null;
+  next_event_type: SolarEventType | null;
+  next_event_time: string | null;
+  following_event_type: SolarEventType | null;
+  following_event_time: string | null;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const cameraId = request.nextUrl.searchParams.get("cameraId");
@@ -92,7 +110,7 @@ async function findBestCameraFromRankings(exclude: Set<string>) {
   }
 
   // Get the best ranked camera that's not excluded
-  const bestRanking = rankings[0];
+  const bestRanking = rankings[0] as RankingRow;
   const camera = await getCameraById(bestRanking.camera_id);
 
   if (!camera) {
@@ -126,7 +144,7 @@ async function getRanking(cameraId: string) {
     return null;
   }
 
-  return data;
+  return (data as RankingRow | null) ?? null;
 }
 
 async function countAvailableRankings() {
@@ -143,7 +161,7 @@ async function countAvailableRankings() {
   return count ?? 0;
 }
 
-function buildMeta(cameraId: string, ranking: any) {
+function buildMeta(cameraId: string, ranking: RankingRow) {
   const events = resolveUpcomingEvents(ranking);
   return {
     cameraId,
@@ -160,8 +178,8 @@ function buildMeta(cameraId: string, ranking: any) {
   };
 }
 
-function resolveUpcomingEvents(ranking: any) {
-  const events: Array<{ type: "sunrise" | "sunset"; timeISO: string }> = [];
+function resolveUpcomingEvents(ranking: RankingRow) {
+  const events: Array<{ type: SolarEventType; timeISO: string }> = [];
   if (ranking.next_event_type && ranking.next_event_time) {
     events.push({
       type: ranking.next_event_type,
@@ -188,8 +206,14 @@ function resolveUpcomingEvents(ranking: any) {
       }
       return { ...event, timestamp };
     })
-    .filter((event): event is { type: "sunrise" | "sunset"; timeISO: string; timestamp: number } =>
-      Boolean(event)
+    .filter(
+      (
+        event
+      ): event is {
+        type: SolarEventType;
+        timeISO: string;
+        timestamp: number;
+      } => Boolean(event)
     )
     .sort((a, b) => a.timestamp - b.timestamp);
 
