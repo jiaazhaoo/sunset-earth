@@ -76,7 +76,13 @@ function VideoFrame({
         try {
           const text =
             iframeRef.current?.contentDocument?.body?.innerText ?? "";
-          if (text.includes("This live stream recording is not available")) {
+          const unavailablePhrases = [
+            "This live stream recording is not available",
+            "This live event is no longer available",
+            "Video unavailable",
+            "Private video",
+          ];
+          if (unavailablePhrases.some((phrase) => text.includes(phrase))) {
             onStreamError();
           }
         } catch (error) {

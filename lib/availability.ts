@@ -113,6 +113,7 @@ async function checkYoutubeAvailability(
   }
   const unavailablePhrases = [
     "This live stream recording is not available",
+    "This live event is no longer available",
     "Video unavailable",
     "Private video",
     "Playback on other websites has been disabled",
