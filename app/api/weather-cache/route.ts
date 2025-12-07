@@ -116,10 +116,21 @@ async function executeWeatherCache(request: NextRequest) {
   try {
     const baseUrl = request.nextUrl.origin;
     console.log("[weather-cache] triggering compute-rankings...");
-    const rankingsResponse = await fetch(`${baseUrl}/api/compute-rankings`, {
-      headers: {
-        Authorization: `Bearer ${process.env.CRON_SECRET}`,
-      },
+    const rankingsUrl = buildBypassUrl(
+      `${baseUrl}/api/compute-rankings`,
+      process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+    );
+    const rankingsHeaders: Record<string, string> = {
+      Authorization: `Bearer ${process.env.CRON_SECRET}`,
+    };
+    const bypassHeader = buildBypassHeader(
+      process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+    );
+    if (bypassHeader) {
+      rankingsHeaders["x-vercel-protection-bypass"] = bypassHeader;
+    }
+    const rankingsResponse = await fetch(rankingsUrl, {
+      headers: rankingsHeaders,
     });
 
     if (!rankingsResponse.ok) {
@@ -143,4 +154,21 @@ async function executeWeatherCache(request: NextRequest) {
   }
 
   return result;
+}
+
+function buildBypassUrl(url: string, bypassSecret?: string) {
+  if (!bypassSecret) {
+    return url;
+  }
+  const parsed = new URL(url);
+  parsed.searchParams.set("x-vercel-set-bypass-cookie", "true");
+  parsed.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+  return parsed.toString();
+}
+
+function buildBypassHeader(bypassSecret?: string) {
+  if (!bypassSecret) {
+    return null;
+  }
+  return bypassSecret;
 }
