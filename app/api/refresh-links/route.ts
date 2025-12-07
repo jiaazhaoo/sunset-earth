@@ -108,11 +108,17 @@ export async function GET(request: NextRequest) {
         `${baseUrl}/api/replace-link`,
         process.env.VERCEL_AUTOMATION_BYPASS_SECRET
       );
+      const replaceHeaders: Record<string, string> = {
+        Authorization: `Bearer ${process.env.CRON_SECRET}`,
+      };
+      const bypassHeader = buildBypassHeader(
+        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+      );
+      if (bypassHeader) {
+        replaceHeaders["x-vercel-protection-bypass"] = bypassHeader;
+      }
       const replaceResponse = await fetch(replaceUrl, {
-        headers: {
-          Authorization: `Bearer ${process.env.CRON_SECRET}`,
-          ...buildBypassHeaders(process.env.VERCEL_AUTOMATION_BYPASS_SECRET),
-        },
+        headers: replaceHeaders,
       });
 
       if (!replaceResponse.ok) {
@@ -170,11 +176,9 @@ function buildBypassUrl(url: string, bypassSecret?: string) {
   return parsed.toString();
 }
 
-function buildBypassHeaders(bypassSecret?: string) {
+function buildBypassHeader(bypassSecret?: string) {
   if (!bypassSecret) {
-    return {};
+    return null;
   }
-  return {
-    "x-vercel-protection-bypass": bypassSecret,
-  };
+  return bypassSecret;
 }

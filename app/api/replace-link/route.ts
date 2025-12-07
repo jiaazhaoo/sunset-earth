@@ -98,11 +98,17 @@ export async function GET(request: NextRequest) {
         `${baseUrl}/api/weather-cache`,
         process.env.VERCEL_AUTOMATION_BYPASS_SECRET
       );
+      const weatherHeaders: Record<string, string> = {
+        Authorization: `Bearer ${process.env.CRON_SECRET}`,
+      };
+      const bypassHeader = buildBypassHeader(
+        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+      );
+      if (bypassHeader) {
+        weatherHeaders["x-vercel-protection-bypass"] = bypassHeader;
+      }
       const weatherResponse = await fetch(weatherUrl, {
-        headers: {
-          Authorization: `Bearer ${process.env.CRON_SECRET}`,
-          ...buildBypassHeaders(process.env.VERCEL_AUTOMATION_BYPASS_SECRET),
-        },
+        headers: weatherHeaders,
       });
 
       if (!weatherResponse.ok) {
@@ -146,11 +152,9 @@ function buildBypassUrl(url: string, bypassSecret?: string) {
   return parsed.toString();
 }
 
-function buildBypassHeaders(bypassSecret?: string) {
+function buildBypassHeader(bypassSecret?: string) {
   if (!bypassSecret) {
-    return {};
+    return null;
   }
-  return {
-    "x-vercel-protection-bypass": bypassSecret,
-  };
+  return bypassSecret;
 }
