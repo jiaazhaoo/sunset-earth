@@ -101,6 +101,7 @@ export async function GET(request: NextRequest) {
       const weatherResponse = await fetch(weatherUrl, {
         headers: {
           Authorization: `Bearer ${process.env.CRON_SECRET}`,
+          ...buildBypassHeaders(process.env.VERCEL_AUTOMATION_BYPASS_SECRET),
         },
       });
 
@@ -143,4 +144,13 @@ function buildBypassUrl(url: string, bypassSecret?: string) {
   parsed.searchParams.set("x-vercel-set-bypass-cookie", "true");
   parsed.searchParams.set("x-vercel-protection-bypass", bypassSecret);
   return parsed.toString();
+}
+
+function buildBypassHeaders(bypassSecret?: string) {
+  if (!bypassSecret) {
+    return {};
+  }
+  return {
+    "x-vercel-protection-bypass": bypassSecret,
+  };
 }
