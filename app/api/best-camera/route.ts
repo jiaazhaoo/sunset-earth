@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCameraById, getRandomCamera } from "@/lib/cameras";
+import {
+  getCameraById,
+  getRandomCamera,
+  listCameras,
+} from "@/lib/cameras";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 type SolarEventType = "sunrise" | "sunset";
@@ -58,13 +62,30 @@ export async function GET(request: NextRequest) {
     // Find best camera from pre-computed rankings
     const best = await findBestCameraFromRankings(excludeSet);
     if (!best) {
-      // Fallback to random camera if no rankings available
-      const fallback = await getRandomCamera();
-      return fallback
+      const fallback = await getFallbackCamera(excludeSet);
+      if (fallback) {
+        return NextResponse.json({
+          camera: fallback,
+          meta: null,
+          rotationReset: excludeSet.size > 0,
+        });
+      }
+
+      const resetCandidate = await getFallbackCamera(new Set());
+      if (resetCandidate) {
+        return NextResponse.json({
+          camera: resetCandidate,
+          meta: null,
+          rotationReset: true,
+        });
+      }
+
+      const randomCamera = await getRandomCamera();
+      return randomCamera
         ? NextResponse.json({
-            camera: fallback,
+            camera: randomCamera,
             meta: null,
-            rotationReset: false,
+            rotationReset: true,
           })
         : NextResponse.json(
             { error: "No cameras available" },
@@ -183,6 +204,18 @@ function buildMeta(cameraId: string, ranking: RankingRow) {
     nextEvent: events[0] ?? null,
     followingEvent: events[1] ?? null,
   };
+}
+
+async function getFallbackCamera(exclude: Set<string>) {
+  const cameras = await listCameras(500);
+  const pool = cameras.filter(
+    (camera) => camera.linkAvailable !== false && !exclude.has(camera.id)
+  );
+  if (!pool.length) {
+    return null;
+  }
+  const index = Math.floor(Math.random() * pool.length);
+  return pool[index];
 }
 
 function resolveUpcomingEvents(ranking: RankingRow) {
