@@ -40,12 +40,6 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         );
       }
-      if (camera.linkAvailable === false) {
-        return NextResponse.json(
-          { error: "Camera unavailable" },
-          { status: 410 }
-        );
-      }
 
       const ranking = await getRanking(cameraId);
       return NextResponse.json({
@@ -115,24 +109,23 @@ async function findBestCameraFromRankings(exclude: Set<string>) {
     return null;
   }
 
-  const totalAvailable = await countAvailableRankings();
-  for (const entry of rankings as RankingRow[]) {
-    const camera = await getCameraById(entry.camera_id);
-    if (!camera) {
-      continue;
-    }
-    if (camera.linkAvailable === false) {
-      continue;
-    }
+  // Get the best ranked camera that's not excluded
+  const bestRanking = rankings[0] as RankingRow;
+  const camera = await getCameraById(bestRanking.camera_id);
 
-    const rotationReset = exclusionList.length >= totalAvailable;
-    return {
-      camera,
-      meta: buildMeta(entry.camera_id, entry),
-      rotationReset,
-    };
+  if (!camera) {
+    return null;
   }
-  return null;
+
+  // Check if we've cycled through all cameras
+  const totalAvailable = await countAvailableRankings();
+  const rotationReset = exclusionList.length >= totalAvailable;
+
+  return {
+    camera,
+    meta: buildMeta(bestRanking.camera_id, bestRanking),
+    rotationReset,
+  };
 }
 
 async function getRanking(cameraId: string) {

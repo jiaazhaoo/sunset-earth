@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CameraRecord } from "@/lib/cameras";
 
 type Props = {
@@ -157,20 +157,20 @@ export function CameraViewer({ initialCamera }: Props) {
     }
   }, [camera?.id]);
 
-  const buildExcludeQuery = (additional: string[] = []) => {
-    const ids = [...new Set([...seen, ...blacklist, ...additional].filter(Boolean))];
+  const excludeQuery = useMemo(() => {
+    const ids = [...new Set([...seen, ...blacklist])];
     if (!ids.length) return "";
     const params = new URLSearchParams();
     params.set("exclude", ids.join(","));
     return `?${params.toString()}`;
-  };
+  }, [seen, blacklist]);
 
-  const handleSwitch = async (additionalExclude: string[] = []) => {
+  const handleSwitch = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(`/api/best-camera${buildExcludeQuery(additionalExclude)}`, {
+      const response = await fetch(`/api/best-camera${excludeQuery}`, {
         cache: "no-store",
       });
       if (!response.ok) {
@@ -197,29 +197,7 @@ export function CameraViewer({ initialCamera }: Props) {
   };
 
   const handleStreamFailure = async () => {
-    if (!camera?.id) {
-      console.warn("Camera stream reported a failure without active camera.");
-      return;
-    }
-    console.warn("Camera stream reported a failure.", camera.id);
-    setBlacklist((prev) =>
-      prev.includes(camera.id) ? prev : [...prev, camera.id]
-    );
-    try {
-      await fetch("/api/camera-availability", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          cameraId: camera.id,
-          available: false,
-        }),
-      });
-    } catch (error) {
-      console.warn("Failed to report camera availability", error);
-    }
-    await handleSwitch([camera.id]);
+    console.warn("Camera stream reported a failure.");
   };
 
   useEffect(() => {

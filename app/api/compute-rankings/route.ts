@@ -106,12 +106,6 @@ async function executeComputeRankings() {
 
         // Skip explicitly disabled cameras
         if (camera.linkAvailable === false) {
-          await upsertRanking({
-            cameraId: camera.id,
-            score: 0,
-            available: false,
-            computedAt: now,
-          });
           summary.skipped++;
           summary.details.push({
             id: camera.id,
