@@ -285,7 +285,7 @@ function calculateEnhancedScore(context: ScoreContext): number {
     // Golden hour: partly-cloudy is fine, but rain/heavy clouds reduce score
     if (weatherClass === "clear") weatherWeight = 1;
     else if (weatherClass === "partly-cloudy") weatherWeight = 0.9; // Only slight reduction
-    else if (weatherClass === "light-snow") weatherWeight = 0.75;
+    else if (weatherClass === "snow" || weatherClass === "snow-showers") weatherWeight = 0.75;
     else weatherWeight = 0.5;
   } else if (timeTier.label === "blue-hour-sunset" || timeTier.label === "blue-hour-sunrise") {
     // Blue hour: weather doesn't matter much
@@ -305,7 +305,7 @@ function calculateEnhancedScore(context: ScoreContext): number {
     // Extended golden hour: partly-cloudy is acceptable, but not as good as clear
     if (weatherClass === "clear") weatherWeight = 1;
     else if (weatherClass === "partly-cloudy") weatherWeight = 0.85;
-    else if (weatherClass === "light-snow") weatherWeight = 0.7;
+    else if (weatherClass === "snow" || weatherClass === "snow-showers") weatherWeight = 0.7;
     else weatherWeight = 0.4;
   } else if (timeTier.label?.includes("approaching") || timeTier.label?.includes("after")) {
     // Approaching/after golden hour: clear weather preferred

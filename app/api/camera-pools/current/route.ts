@@ -111,8 +111,8 @@ export async function GET(request: NextRequest) {
           )
         )
           .filter(
-            (camera) =>
-              camera &&
+            (camera): camera is NonNullable<typeof camera> =>
+              camera !== null &&
               (includeUnavailable ? true : camera.linkAvailable !== false)
           )
           .map((camera) => {
@@ -152,8 +152,8 @@ export async function GET(request: NextRequest) {
       )
     )
       .filter(
-        (camera) =>
-          camera &&
+        (camera): camera is NonNullable<typeof camera> =>
+          camera !== null &&
           (includeUnavailable ? true : camera.linkAvailable !== false)
       )
       .map((camera) => {

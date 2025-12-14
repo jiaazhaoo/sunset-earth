@@ -49,7 +49,7 @@ async function testBatchPrediction() {
         label: "clear-day" as const,
         isClear: false,
         isDaytime: true,
-        weatherClass: "other" as const,
+        weatherClass: "cloudy" as const,
       },
       tags: ["Cultural Landmark"],
     },

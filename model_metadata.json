@@ -1,0 +1,85 @@
+{
+  "feature_names": [
+    "score",
+    "is_daytime",
+    "is_weather_resistant",
+    "is_night_scene",
+    "is_golden_hour",
+    "is_blue_hour",
+    "label_city-skyline-night",
+    "label_clear-day",
+    "label_night",
+    "label_sunrise-extended",
+    "label_sunset-extended",
+    "label_sunset-primary",
+    "weather_clear",
+    "weather_light-snow",
+    "weather_other",
+    "weather_partly-cloudy",
+    "tag_Airport",
+    "tag_Arctic Circle",
+    "tag_Aurora",
+    "tag_City Skyline",
+    "tag_Coastline",
+    "tag_Cultural Landmark",
+    "tag_Harbor",
+    "tag_Mountain Range",
+    "tag_Natural Scenery",
+    "tag_Railway",
+    "tag_Ski Resort",
+    "tag_Street Scene",
+    "tag_Wildlife"
+  ],
+  "tag_classes": [
+    "tag_Airport",
+    "tag_Arctic Circle",
+    "tag_Aurora",
+    "tag_City Skyline",
+    "tag_Coastline",
+    "tag_Cultural Landmark",
+    "tag_Harbor",
+    "tag_Mountain Range",
+    "tag_Natural Scenery",
+    "tag_Railway",
+    "tag_Ski Resort",
+    "tag_Street Scene",
+    "tag_Wildlife"
+  ],
+  "label_classes": [
+    "label_city-skyline-night",
+    "label_clear-day",
+    "label_night",
+    "label_sunrise-extended",
+    "label_sunset-extended",
+    "label_sunset-primary"
+  ],
+  "weather_classes": [
+    "weather_clear",
+    "weather_light-snow",
+    "weather_other",
+    "weather_partly-cloudy"
+  ],
+  "num_features": 29,
+  "train_accuracy": 1.0,
+  "test_accuracy": 1.0,
+  "training_samples": 123,
+  "pool_distribution": {
+    "pool_1": 0,
+    "pool_2": 0,
+    "pool_3": 0,
+    "pool_4": 62,
+    "pool_5": 61
+  },
+  "class_mapping": {
+    "3": 0,
+    "4": 1
+  },
+  "reverse_mapping": {
+    "0": 3,
+    "1": 4
+  },
+  "trained_pools": [
+    4,
+    5
+  ]
+}

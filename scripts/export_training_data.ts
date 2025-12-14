@@ -38,9 +38,9 @@ async function exportTrainingData() {
     const poolId = assignToPool(evaluation, tags);
 
     const tagsStr = tags?.join("|") || "";
-    const isDaytimeStr = row.is_daytime === null ? "" : row.is_daytime;
+    // isDaytime is not stored in rankings table, leave it empty
     csvStream.write(
-      `${row.camera_id},${row.score},${row.label},${row.weather_class},${isDaytimeStr},"${tagsStr}",${poolId},rule,${new Date().toISOString()}\n`
+      `${row.camera_id},${row.score},${row.label},${row.weather_class},,"${tagsStr}",${poolId},rule,${new Date().toISOString()}\n`
     );
     count++;
   }

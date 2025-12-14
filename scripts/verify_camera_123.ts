@@ -11,7 +11,7 @@ const camera123Daytime: CameraEvaluation = {
   label: "sunrise-extended",
   isClear: false,
   isDaytime: true,
-  weatherClass: "light-snow",
+  weatherClass: "snow",
 };
 
 const tags = ["Aurora", "Arctic Circle"];

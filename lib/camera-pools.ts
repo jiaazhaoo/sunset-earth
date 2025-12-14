@@ -150,7 +150,7 @@ export function assignToPool(evaluation: CameraEvaluation, tags?: string[]): Poo
     }
 
     // Golden hour with acceptable weather (not clear but good visibility)
-    // e.g., partly cloudy or light weather during sunrise/sunset
+    // e.g., partly cloudy during sunrise/sunset
     if (
       (label === "sunset-primary" ||
        label === "sunrise-primary" ||
@@ -158,7 +158,7 @@ export function assignToPool(evaluation: CameraEvaluation, tags?: string[]): Poo
        label === "sunrise-extended" ||
        label === "blue-hour-sunset" ||
        label === "blue-hour-sunrise") &&
-      (weatherClass === "partly-cloudy" || weatherClass === "other")
+      weatherClass === "partly-cloudy"
     ) {
       return 3;
     }
