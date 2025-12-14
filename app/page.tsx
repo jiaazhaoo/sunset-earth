@@ -41,10 +41,14 @@ type HomeProps = {
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
 
-  // Prefer camera specified via query param
+  // Prefer camera specified via query param (but only if available)
   let initialCamera: CameraRecord | null = null;
   if (params?.camera) {
-    initialCamera = await getCameraById(params.camera);
+    const camera = await getCameraById(params.camera);
+    // Only use this camera if its link is available
+    if (camera && camera.linkAvailable !== false) {
+      initialCamera = camera;
+    }
   }
 
   // Fallback to best-ranked camera
