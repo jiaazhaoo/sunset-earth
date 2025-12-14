@@ -1,38 +1,56 @@
 import { CameraViewer } from "@/components/camera-viewer";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getCameraById, getRandomCamera } from "@/lib/cameras";
+import { fetchAvailableRankings } from "@/lib/rankings";
 import type { CameraRecord } from "@/lib/cameras";
+
+const INITIAL_RANKING_FRESHNESS_MINUTES = 30;
 
 async function getBestCamera(): Promise<CameraRecord | null> {
   try {
-    // Query pre-computed rankings for the best camera
-    const freshnessThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    let { rows } = await fetchAvailableRankings({
+      limit: 10,
+      freshnessMinutes: INITIAL_RANKING_FRESHNESS_MINUTES,
+    });
 
-    const { data: rankings, error } = await supabaseAdmin
-      .from("camera_rankings")
-      .select("camera_id")
-      .eq("available", true)
-      .gte("computed_at", freshnessThreshold.toISOString())
-      .order("score", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error || !rankings) {
-      console.warn("[getBestCamera] No rankings found, falling back to random");
-      return await getRandomCamera();
+    if (!rows.length) {
+      ({ rows } = await fetchAvailableRankings({
+        limit: 10,
+        freshnessMinutes: 24 * 60,
+      }));
     }
 
-    const camera = await getCameraById(rankings.camera_id);
-    return camera || await getRandomCamera();
+    for (const row of rows) {
+      const camera = await getCameraById(row.camera_id);
+      if (camera && camera.linkAvailable !== false) {
+        return camera;
+      }
+    }
+
+    console.warn("[getBestCamera] No ranked cameras available, using random fallback");
+    return await getRandomCamera();
   } catch (error) {
     console.error("[getBestCamera] Error:", error);
     return await getRandomCamera();
   }
 }
 
-export default async function Home() {
-  // Get the best camera from pre-computed rankings
-  const initialCamera = await getBestCamera();
+type HomeProps = {
+  searchParams: Promise<{ camera?: string }>;
+};
+
+export default async function Home({ searchParams }: HomeProps) {
+  const params = await searchParams;
+
+  // Prefer camera specified via query param
+  let initialCamera: CameraRecord | null = null;
+  if (params?.camera) {
+    initialCamera = await getCameraById(params.camera);
+  }
+
+  // Fallback to best-ranked camera
+  if (!initialCamera) {
+    initialCamera = await getBestCamera();
+  }
 
   return (
     <div className="flex min-h-screen items-center bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950">

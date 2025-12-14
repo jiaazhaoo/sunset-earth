@@ -91,58 +91,10 @@ export async function GET(request: NextRequest) {
 
     const roomsCleanup = await cleanupEmptyRooms();
 
-    const result = {
+    return NextResponse.json({
       ...summary,
       roomsCleanup,
-      chainStatus: {
-        refreshLinks: "success",
-        replaceLink: "pending",
-      },
-    };
-
-    // Trigger next task in chain: replace-link
-    try {
-      const baseUrl = request.nextUrl.origin;
-      console.log("[refresh-links] triggering replace-link...");
-      const replaceUrl = buildBypassUrl(
-        `${baseUrl}/api/replace-link`,
-        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
-      );
-      const replaceHeaders: Record<string, string> = {
-        Authorization: `Bearer ${process.env.CRON_SECRET}`,
-      };
-      const bypassHeader = buildBypassHeader(
-        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
-      );
-      if (bypassHeader) {
-        replaceHeaders["x-vercel-protection-bypass"] = bypassHeader;
-      }
-      const replaceResponse = await fetch(replaceUrl, {
-        headers: replaceHeaders,
-      });
-
-      if (!replaceResponse.ok) {
-        const errorText = await replaceResponse.text();
-        console.error(
-          "[refresh-links] replace-link failed:",
-          replaceResponse.status,
-          errorText
-        );
-        result.chainStatus.replaceLink = "failed";
-        return NextResponse.json(result, { status: 207 }); // 207 Multi-Status
-      }
-
-      result.chainStatus.replaceLink = "triggered";
-      console.log("[refresh-links] successfully triggered replace-link");
-    } catch (error) {
-      console.error("[refresh-links] failed to trigger replace-link:", error);
-      if (result.chainStatus.replaceLink === "pending") {
-        result.chainStatus.replaceLink = "failed";
-      }
-      return NextResponse.json(result, { status: 207 });
-    }
-
-    return NextResponse.json(result);
+    });
   } catch (error) {
     console.error("[refresh-links]", error);
     return NextResponse.json(
@@ -164,21 +116,4 @@ async function markUnavailable(cameraId: string, checkedAt: string) {
   if (error) {
     throw new Error(error.message);
   }
-}
-
-function buildBypassUrl(url: string, bypassSecret?: string) {
-  if (!bypassSecret) {
-    return url;
-  }
-  const parsed = new URL(url);
-  parsed.searchParams.set("x-vercel-set-bypass-cookie", "true");
-  parsed.searchParams.set("x-vercel-protection-bypass", bypassSecret);
-  return parsed.toString();
-}
-
-function buildBypassHeader(bypassSecret?: string) {
-  if (!bypassSecret) {
-    return null;
-  }
-  return bypassSecret;
 }

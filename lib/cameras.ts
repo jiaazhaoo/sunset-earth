@@ -69,6 +69,24 @@ export async function getCameraById(cameraId: string) {
   return data ? mapCameraRow(data) : null;
 }
 
+export async function getCameraTagsMap(cameraIds: string[]): Promise<Map<string, string[]>> {
+  const { data, error } = await supabaseAdmin
+    .from("camera_ytb")
+    .select("camera_id, tag")
+    .in("camera_id", cameraIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const tagsMap = new Map<string, string[]>();
+  for (const row of data ?? []) {
+    tagsMap.set(String(row.camera_id), parseTags(row.tag));
+  }
+
+  return tagsMap;
+}
+
 export async function getRandomCamera() {
   const pool = (await listCameras(200)).filter(
     (camera) => camera.linkAvailable !== false

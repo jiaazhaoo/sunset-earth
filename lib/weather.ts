@@ -58,13 +58,31 @@ export type CameraEvaluation = {
 const weatherCache = new Map<string, CachedEntry>();
 const MINUTE = 60 * 1000;
 
-type WeatherClass = "clear" | "partly-cloudy" | "light-snow" | "other";
+type WeatherClass =
+  | "clear"
+  | "partly-cloudy"
+  | "cloudy"
+  | "fog"
+  | "drizzle"
+  | "rain"
+  | "freezing-rain"
+  | "snow"
+  | "snow-showers"
+  | "thunderstorm"
+  | "thunderstorm-hail";
 
 const WEATHER_WEIGHTS: Record<WeatherClass, number> = {
   clear: 1,
   "partly-cloudy": 0.4,
-  "light-snow": 0.7,
-  other: 0.4,
+  cloudy: 0.65,
+  fog: 0.5,
+  drizzle: 0.65,
+  rain: 0.45,
+  "freezing-rain": 0.35,
+  snow: 0.65,
+  "snow-showers": 0.6,
+  thunderstorm: 0.25,
+  "thunderstorm-hail": 0.2,
 };
 
 const METRIC_LIMITS = {
@@ -124,6 +142,51 @@ export async function getCachedWeatherSnapshot(
   }
   const persistent = await loadWeatherCache(cacheSlug);
   return persistent?.data ?? null;
+}
+
+export async function getBulkCachedWeatherSnapshots(
+  cameraSlugs: string[]
+): Promise<Map<string, OpenMeteoResponse>> {
+  const result = new Map<string, OpenMeteoResponse>();
+
+  // First check in-memory cache
+  const uncachedSlugs: string[] = [];
+  for (const slug of cameraSlugs) {
+    const cached = weatherCache.get(slug);
+    if (cached) {
+      result.set(slug, cached.data);
+    } else {
+      uncachedSlugs.push(slug);
+    }
+  }
+
+  // Batch fetch from database for uncached items
+  if (uncachedSlugs.length > 0) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from(WEATHER_CACHE_TABLE)
+        .select("camera_id,data,fetched_at")
+        .in("camera_id", uncachedSlugs);
+
+      if (!error && data) {
+        for (const row of data) {
+          const weatherData = row.data as OpenMeteoResponse;
+          result.set(row.camera_id, weatherData);
+
+          // Update in-memory cache
+          const fetchedAt = new Date(row.fetched_at).getTime();
+          weatherCache.set(row.camera_id, {
+            fetchedAt,
+            data: weatherData,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("[weather] bulk load cache failed", error);
+    }
+  }
+
+  return result;
 }
 
 async function refreshWeatherSnapshot(
@@ -303,16 +366,50 @@ function getHourlyValue(
 }
 
 function classifyWeather(code: number | null): WeatherClass {
-  if (code === 0 || code === 1) {
-    return "clear";
+  switch (code) {
+    case 0:
+    case 1:
+      return "clear";
+    case 2:
+      return "partly-cloudy";
+    case 3:
+      return "cloudy";
+    case 45:
+    case 48:
+      return "fog";
+    case 51:
+    case 53:
+    case 55:
+      return "drizzle";
+    case 56:
+    case 57:
+      return "freezing-rain";
+    case 61:
+    case 63:
+    case 65:
+    case 80:
+    case 81:
+    case 82:
+      return "rain";
+    case 66:
+    case 67:
+      return "freezing-rain";
+    case 71:
+    case 73:
+    case 75:
+    case 77:
+      return "snow";
+    case 85:
+    case 86:
+      return "snow-showers";
+    case 95:
+      return "thunderstorm";
+    case 96:
+    case 99:
+      return "thunderstorm-hail";
+    default:
+      return "cloudy"; // fallback without returning "other"
   }
-  if (code === 2) {
-    return "partly-cloudy";
-  }
-  if (code === 71 || code === 85) {
-    return "light-snow";
-  }
-  return "other";
 }
 
 type TimeTierResult = {

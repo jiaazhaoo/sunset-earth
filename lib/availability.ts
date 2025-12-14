@@ -71,8 +71,11 @@ async function checkYoutubeAvailability(
   const watchProbe = buildYoutubeWatchUrl(url);
   if (watchProbe) {
     const playable = await fetchPlayabilityStatus(watchProbe, options);
-    if (playable === "UNPLAYABLE") {
-      return { available: false, reason: "unavailable_text" };
+    // Check for various unavailable statuses
+    // YouTube can return: "UNPLAYABLE", "ERROR", "LOGIN_REQUIRED", etc.
+    if (playable && playable !== "OK") {
+      console.log(`[availability] Playability status: ${playable}`);
+      return { available: false, reason: "playability_blocked" };
     }
 
     const oembedResponse = await fetch(

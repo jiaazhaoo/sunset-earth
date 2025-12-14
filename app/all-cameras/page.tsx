@@ -3,8 +3,25 @@ import { listCameras } from "@/lib/cameras";
 
 export const revalidate = 300;
 
+async function fetchAllCameras(batchSize = 200) {
+  const cameras: Awaited<ReturnType<typeof listCameras>> = [];
+  let offset = 0;
+
+  while (true) {
+    const batch = await listCameras(batchSize, offset);
+    if (!batch.length) {
+      break;
+    }
+
+    cameras.push(...batch);
+    offset += batch.length;
+  }
+
+  return cameras;
+}
+
 export default async function AllCamerasPage() {
-  const cameras = await listCameras(120);
+  const cameras = await fetchAllCameras();
 
   return (
     <div className="min-h-screen bg-zinc-50">
