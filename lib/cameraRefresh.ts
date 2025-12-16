@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isCameraAvailable } from "@/lib/availability";
 import {
   calculateSimilarity,
+  calculateSmartSimilarity,
   fetchChannelLiveCandidates,
 } from "@/lib/youtube";
 
@@ -13,6 +14,13 @@ export async function refreshCameraById(cameraId: string) {
   }
   return refreshCamera(camera);
 }
+
+type MatchCandidate = {
+  videoId: string;
+  title: string;
+  similarity: number;
+  matchType: "exact" | "smart" | "relaxed";
+};
 
 export async function refreshCamera(camera: CameraRecord) {
   if (!camera.hostLink) {
@@ -26,6 +34,9 @@ export async function refreshCamera(camera: CameraRecord) {
 
   const currentVideoId = extractVideoId(camera.sourceUrl);
   const referenceTitle = camera.ytbTitle ?? camera.name ?? "";
+
+  // Multi-layer matching strategy: collect all playable candidates with their scores
+  const playableCandidates: MatchCandidate[] = [];
 
   for (const live of candidates) {
     if (!live.videoId) {
@@ -42,33 +53,71 @@ export async function refreshCamera(camera: CameraRecord) {
       continue;
     }
 
-    const similarity = calculateSimilarity(referenceTitle, live.title ?? "");
-    if (similarity < 0.75) {
-      continue;
+    // Calculate multiple similarity scores
+    const exactSimilarity = calculateSimilarity(referenceTitle, live.title ?? "");
+    const smartSimilarity = calculateSmartSimilarity(referenceTitle, live.title ?? "");
+
+    // Determine match type and score
+    let matchType: "exact" | "smart" | "relaxed" = "relaxed";
+    let similarity = Math.max(exactSimilarity, smartSimilarity);
+
+    if (exactSimilarity >= 0.75) {
+      matchType = "exact";
+      similarity = exactSimilarity;
+    } else if (smartSimilarity >= 0.5) {
+      matchType = "smart";
+      similarity = smartSimilarity;
     }
 
-    const newLink = `https://www.youtube.com/watch?v=${live.videoId}`;
-
-    const { error } = await supabaseAdmin
-      .from("camera_ytb")
-      .update({
-        link: newLink,
-        ytb_title: live.title,
-        link_available: true,
-        last_check: new Date().toISOString(),
-      })
-      .eq("camera_id", camera.id);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const updatedCamera = await getCameraById(camera.id);
-    return {
-      updated: Boolean(updatedCamera),
+    playableCandidates.push({
+      videoId: live.videoId,
+      title: live.title ?? "",
       similarity,
-      camera: updatedCamera ?? camera,
-    };
+      matchType,
+    });
+  }
+
+  // Sort by similarity (highest first)
+  playableCandidates.sort((a, b) => b.similarity - a.similarity);
+
+  // Try to find a match using tiered thresholds
+  const thresholds = [
+    { type: "exact" as const, minScore: 0.75 },
+    { type: "smart" as const, minScore: 0.45 },  // Lowered from 0.5 to catch more location matches
+    { type: "relaxed" as const, minScore: 0.3 },
+  ];
+
+  for (const threshold of thresholds) {
+    const match = playableCandidates.find(
+      c => c.matchType === threshold.type && c.similarity >= threshold.minScore
+    );
+
+    if (match) {
+      const newLink = `https://www.youtube.com/watch?v=${match.videoId}`;
+
+      const { error } = await supabaseAdmin
+        .from("camera_ytb")
+        .update({
+          link: newLink,
+          ytb_title: match.title,
+          link_available: true,
+          last_check: new Date().toISOString(),
+        })
+        .eq("camera_id", camera.id);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const updatedCamera = await getCameraById(camera.id);
+      console.log(`[refreshCamera] ${camera.id} matched with ${threshold.type} (${match.similarity.toFixed(3)})`);
+      return {
+        updated: Boolean(updatedCamera),
+        similarity: match.similarity,
+        matchType: threshold.type,
+        camera: updatedCamera ?? camera,
+      };
+    }
   }
 
   return { updated: false, reason: "no-playable" as const };

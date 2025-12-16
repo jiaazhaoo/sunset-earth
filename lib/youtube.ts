@@ -256,6 +256,91 @@ export function calculateSimilarity(a: string, b: string) {
   return (longerLength - distance) / longerLength;
 }
 
+/**
+ * Smart similarity calculation that handles:
+ * - Emojis and special characters
+ * - Different title formats (marketing vs. descriptive)
+ * - Location-based matching with geographic knowledge
+ */
+export function calculateSmartSimilarity(reference: string, candidate: string): number {
+  // Remove emojis and special characters
+  const cleanRef = reference
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const cleanCand = candidate
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Extract meaningful keywords (filter out common words)
+  const stopWords = new Set([
+    "live", "stream", "24", "7", "hd", "4k", "camera", "cam", "view",
+    "relaxing", "music", "watch", "now", "the", "a", "an", "in", "at",
+    "on", "of", "and", "or", "to", "from", "with", "new", "old"
+  ]);
+
+  // Geographic synonyms - locations that refer to the same place
+  const locationSynonyms: Record<string, string[]> = {
+    "yellowstone": ["yellowstone", "geyser", "basin", "faithful", "geysir"],
+    "zermatt": ["zermatt", "matterhorn"],
+    "iceland": ["iceland", "reykjavik", "islanda"],
+    "volcano": ["volcano", "vulkan", "vulcano", "volcan"],
+    "harbour": ["harbour", "harbor", "port", "hafen"],
+    "mountain": ["mountain", "berg", "mont", "monte"],
+  };
+
+  const extractKeywords = (text: string) => {
+    return text
+      .split(/\s+/)
+      .filter(word => word.length > 2 && !stopWords.has(word))
+      .filter(Boolean);
+  };
+
+  const refKeywords = extractKeywords(cleanRef);
+  const candKeywords = extractKeywords(cleanCand);
+
+  // If no keywords, fall back to basic similarity
+  if (refKeywords.length === 0 || candKeywords.length === 0) {
+    return calculateSimilarity(reference, candidate);
+  }
+
+  // Build expanded keyword sets with synonyms
+  const expandWithSynonyms = (keywords: string[]) => {
+    const expanded = new Set(keywords);
+    for (const word of keywords) {
+      for (const [key, synonyms] of Object.entries(locationSynonyms)) {
+        if (synonyms.includes(word)) {
+          synonyms.forEach(syn => expanded.add(syn));
+        }
+      }
+    }
+    return expanded;
+  };
+
+  const refExpanded = expandWithSynonyms(refKeywords);
+  const candExpanded = expandWithSynonyms(candKeywords);
+
+  // Calculate keyword overlap (Jaccard similarity)
+  const intersection = new Set(
+    [...refExpanded].filter(word => candExpanded.has(word))
+  );
+  const union = new Set([...refExpanded, ...candExpanded]);
+  const keywordSimilarity = intersection.size / union.size;
+
+  // Calculate basic string similarity
+  const stringSimilarity = calculateSimilarity(cleanRef, cleanCand);
+
+  // Weighted combination: favor keyword matching for different title styles
+  // If keyword similarity is high, trust it more
+  return Math.max(
+    keywordSimilarity * 0.7 + stringSimilarity * 0.3,
+    stringSimilarity
+  );
+}
+
 function levenshtein(a: string, b: string) {
   const matrix: number[][] = [];
   for (let i = 0; i <= b.length; i++) {
