@@ -3,6 +3,7 @@ import { listCameras } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { cleanupEmptyRooms } from "@/lib/roomCleanup";
+import { refreshCamera } from "@/lib/cameraRefresh";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -24,11 +25,14 @@ export async function GET(request: NextRequest) {
       checked: 0,
       markedUnavailable: 0,
       markedAvailable: 0,
+      replaced: 0,
       unavailableReasons: {} as Record<string, number>,
       details: [] as Array<{
         id: string;
-        status: "available" | "unavailable";
+        status: "available" | "unavailable" | "replaced";
         reason?: string;
+        matchType?: string;
+        similarity?: number;
       }>,
     };
 
@@ -71,6 +75,47 @@ export async function GET(request: NextRequest) {
           summary.unavailableReasons[availability.reason] =
             (summary.unavailableReasons[availability.reason] ?? 0) + 1;
 
+          // Try to find a replacement link if camera has a host link
+          if (camera.hostLink) {
+            console.log(
+              "[refresh-links] attempting to replace",
+              camera.id,
+              availability.reason
+            );
+            try {
+              const refreshResult = await refreshCamera(camera);
+              if (refreshResult.updated) {
+                summary.replaced++;
+                summary.details.push({
+                  id: camera.id,
+                  status: "replaced",
+                  matchType: refreshResult.matchType,
+                  similarity: refreshResult.similarity,
+                });
+                console.log(
+                  "[refresh-links] replaced",
+                  camera.id,
+                  refreshResult.matchType,
+                  refreshResult.similarity?.toFixed(3)
+                );
+                continue;
+              } else {
+                console.log(
+                  "[refresh-links] no replacement found",
+                  camera.id,
+                  refreshResult.reason
+                );
+              }
+            } catch (error) {
+              console.warn(
+                "[refresh-links] replacement failed",
+                camera.id,
+                error
+              );
+            }
+          }
+
+          // If replacement failed or not possible, mark as unavailable
           await markUnavailable(camera.id, checkedAt);
           summary.markedUnavailable++;
           summary.details.push({
