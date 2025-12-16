@@ -323,14 +323,17 @@ function DebugFloatingPanel({
   label: string | null;
 }) {
   return (
-    <div className="fixed bottom-4 right-4 z-50 rounded-2xl border border-white/10 bg-black/80 px-4 py-3 text-sm text-white shadow-2xl shadow-black/60 backdrop-blur">
+    <a
+      href="/dev/pools"
+      className="fixed bottom-4 right-4 z-50 rounded-2xl border border-white/10 bg-black/80 px-4 py-3 text-sm text-white shadow-2xl shadow-black/60 backdrop-blur transition-all hover:border-orange-500/50 hover:shadow-orange-500/20 cursor-pointer"
+    >
       <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-orange-500">
         <span>🎯</span>
         <span>Priority</span>
       </p>
       <p className="mt-1 text-2xl font-semibold">{score ?? "--"}</p>
       <p className="text-xs text-white/70">{label ?? "No label"}</p>
-    </div>
+    </a>
   );
 }
 

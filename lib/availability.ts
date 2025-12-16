@@ -78,6 +78,8 @@ async function checkYoutubeAvailability(
       return { available: false, reason: "playability_blocked" };
     }
 
+    // Even if playability check returns null (parsing failed), continue with oembed check
+    // as an additional verification layer
     const oembedResponse = await fetch(
       `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
         watchProbe
@@ -95,6 +97,13 @@ async function checkYoutubeAvailability(
           : "oembed_error";
       return { available: false, reason };
     }
+
+    // If playability status is explicitly OK, trust it
+    // If it's null (couldn't be determined), rely on embed check below
+    if (playable === "OK") {
+      // Skip embed HTML check since playability is confirmed OK
+      return { available: true, reason: "ok" };
+    }
   }
 
   const response = await fetch(targetUrl, {
@@ -111,19 +120,35 @@ async function checkYoutubeAvailability(
   }
 
   const html = await response.text();
+
+  // Check playability status in embed HTML as well
   if (hasPlayabilityBlock(html)) {
     return { available: false, reason: "playability_blocked" };
   }
+
   const unavailablePhrases = [
     "This live stream recording is not available",
     "This live event is no longer available",
     "Video unavailable",
     "Private video",
     "Playback on other websites has been disabled",
+    "UNPLAYABLE",  // Check for UNPLAYABLE status in embed HTML
+    '"status":"UNPLAYABLE"',  // Check in JSON format
+    '"status":"ERROR"',  // ERROR status
+    '"status":"LOGIN_REQUIRED"',  // Login required
   ];
 
+  // Check HTML content for unavailability indicators
   if (unavailablePhrases.some((phrase) => html.includes(phrase))) {
     return { available: false, reason: "unavailable_text" };
+  }
+
+  // Additional check: if HTML is suspiciously small (< 5KB) and contains error elements,
+  // it likely means the player failed to load properly
+  if (html.length < 5000) {
+    if (html.includes("player-unavailable") || html.includes("An error occurred")) {
+      return { available: false, reason: "unavailable_text" };
+    }
   }
 
   return { available: true, reason: "ok" };
