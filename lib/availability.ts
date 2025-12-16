@@ -143,14 +143,6 @@ async function checkYoutubeAvailability(
     return { available: false, reason: "unavailable_text" };
   }
 
-  // Additional check: if HTML is suspiciously small (< 5KB) and contains error elements,
-  // it likely means the player failed to load properly
-  if (html.length < 5000) {
-    if (html.includes("player-unavailable") || html.includes("An error occurred")) {
-      return { available: false, reason: "unavailable_text" };
-    }
-  }
-
   return { available: true, reason: "ok" };
 }
 
