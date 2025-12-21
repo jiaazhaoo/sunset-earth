@@ -75,6 +75,12 @@ export async function GET() {
           const blueHourEveningStart = new Date(sunset.getTime() + 30 * 60000);
           const blueHourEveningEnd = new Date(sunset.getTime() + 75 * 60000);
 
+          // Golden hour core: ±30 minutes around sunrise/sunset
+          const goldenHourSunriseStart = new Date(sunrise.getTime() - 30 * 60000);
+          const goldenHourSunriseEnd = new Date(sunrise.getTime() + 30 * 60000);
+          const goldenHourSunsetStart = new Date(sunset.getTime() - 30 * 60000);
+          const goldenHourSunsetEnd = new Date(sunset.getTime() + 30 * 60000);
+
           return {
             cameraId: camera.camera_id,
             cameraName: camera.placename || camera.ytb_title || `Camera ${camera.camera_id}`,
@@ -89,6 +95,14 @@ export async function GET() {
             blueHourEvening: {
               start: blueHourEveningStart.toISOString(),
               end: blueHourEveningEnd.toISOString(),
+            },
+            goldenHourSunrise: {
+              start: goldenHourSunriseStart.toISOString(),
+              end: goldenHourSunriseEnd.toISOString(),
+            },
+            goldenHourSunset: {
+              start: goldenHourSunsetStart.toISOString(),
+              end: goldenHourSunsetEnd.toISOString(),
             },
           };
         } catch (error) {

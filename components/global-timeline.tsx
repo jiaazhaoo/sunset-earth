@@ -11,6 +11,8 @@ type SolarEvent = {
   sunset: Date;
   blueHourMorning: { start: Date; end: Date };
   blueHourEvening: { start: Date; end: Date };
+  goldenHourSunrise: { start: Date; end: Date };
+  goldenHourSunset: { start: Date; end: Date };
 };
 
 export function GlobalTimeline() {
@@ -52,6 +54,14 @@ export function GlobalTimeline() {
           blueHourEvening: {
             start: new Date(event.blueHourEvening.start),
             end: new Date(event.blueHourEvening.end),
+          },
+          goldenHourSunrise: {
+            start: new Date(event.goldenHourSunrise.start),
+            end: new Date(event.goldenHourSunrise.end),
+          },
+          goldenHourSunset: {
+            start: new Date(event.goldenHourSunset.start),
+            end: new Date(event.goldenHourSunset.end),
           },
         }));
 
@@ -168,6 +178,10 @@ export function GlobalTimeline() {
                   const blueHourMorningEndPercent = timeToPercent(event.blueHourMorning.end);
                   const blueHourEveningStartPercent = timeToPercent(event.blueHourEvening.start);
                   const blueHourEveningEndPercent = timeToPercent(event.blueHourEvening.end);
+                  const goldenHourSunriseStartPercent = timeToPercent(event.goldenHourSunrise.start);
+                  const goldenHourSunriseEndPercent = timeToPercent(event.goldenHourSunrise.end);
+                  const goldenHourSunsetStartPercent = timeToPercent(event.goldenHourSunset.start);
+                  const goldenHourSunsetEndPercent = timeToPercent(event.goldenHourSunset.end);
 
                   return (
                     <div key={event.cameraId} className="relative">
@@ -181,6 +195,16 @@ export function GlobalTimeline() {
                       </div>
 
                       <div className="relative h-6 bg-zinc-800/50 rounded">
+                        {/* Golden Hour Sunrise */}
+                        <div
+                          className="absolute top-0 bottom-0 bg-amber-400/30 border-l-2 border-r-2 border-amber-400/60"
+                          style={{
+                            left: `${goldenHourSunriseStartPercent}%`,
+                            width: `${goldenHourSunriseEndPercent - goldenHourSunriseStartPercent}%`,
+                          }}
+                          title={`Golden Hour (Sunrise): ${event.goldenHourSunrise.start.toLocaleTimeString()} - ${event.goldenHourSunrise.end.toLocaleTimeString()}`}
+                        />
+
                         {/* Blue Hour Morning */}
                         <div
                           className="absolute top-0 bottom-0 bg-blue-500/30 border-l-2 border-r-2 border-blue-500/50"
@@ -231,6 +255,16 @@ export function GlobalTimeline() {
                           }}
                           title={`Blue Hour (Evening): ${event.blueHourEvening.start.toLocaleTimeString()} - ${event.blueHourEvening.end.toLocaleTimeString()}`}
                         />
+
+                        {/* Golden Hour Sunset */}
+                        <div
+                          className="absolute top-0 bottom-0 bg-amber-400/30 border-l-2 border-r-2 border-amber-400/60"
+                          style={{
+                            left: `${goldenHourSunsetStartPercent}%`,
+                            width: `${goldenHourSunsetEndPercent - goldenHourSunsetStartPercent}%`,
+                          }}
+                          title={`Golden Hour (Sunset): ${event.goldenHourSunset.start.toLocaleTimeString()} - ${event.goldenHourSunset.end.toLocaleTimeString()}`}
+                        />
                       </div>
                     </div>
                   );
@@ -245,6 +279,10 @@ export function GlobalTimeline() {
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-blue-500/30 border-2 border-blue-500/50 rounded"></div>
             <span>Blue Hour</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-amber-400/30 border-2 border-amber-400/60 rounded"></div>
+            <span>Golden Hour</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-yellow-400 rounded"></div>
