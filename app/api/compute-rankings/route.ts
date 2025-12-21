@@ -161,6 +161,14 @@ async function executeComputeRankings() {
         });
 
         // Store ranking
+        const sunriseDate = parseDateInTimezone(
+          weather.daily?.sunrise?.[0],
+          weather.timezone
+        );
+        const sunsetDate = parseDateInTimezone(
+          weather.daily?.sunset?.[0],
+          weather.timezone
+        );
         await upsertRanking({
           cameraId: camera.id,
           score: evaluation.score,
@@ -169,8 +177,8 @@ async function executeComputeRankings() {
           isClear: evaluation.isClear,
           weatherClass: evaluation.weatherClass,
           timezone: weather.timezone,
-          sunrise: weather.daily?.sunrise?.[0],
-          sunset: weather.daily?.sunset?.[0],
+          sunrise: sunriseDate?.toISOString() ?? null,
+          sunset: sunsetDate?.toISOString() ?? null,
           nextEventType: evaluation.nextEvent?.type,
           nextEventTime: evaluation.nextEvent?.time,
           followingEventType: evaluation.followingEvent?.type,
@@ -246,5 +254,53 @@ async function upsertRanking(data: RankingData) {
 
   if (error) {
     throw new Error(error.message);
+  }
+}
+
+function parseDateInTimezone(value: string | undefined | null, timezone?: string) {
+  if (!value) return null;
+  if (value.endsWith("Z") || /[+-]\\d{2}:\\d{2}$/.test(value)) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (!timezone) {
+    const d = new Date(`${value}Z`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  try {
+    const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(value);
+    if (!match) return null;
+    const [, year, month, day, hour = "00", minute = "00", second = "00"] = match;
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZoneName: "short",
+    });
+    const refUtc = new Date(`${year}-${month}-${day}T00:00:00Z`);
+    const refFormatted = formatter.format(refUtc);
+    const refMatch = /(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4}),?\\s*(\\d{1,2}):(\\d{2}):(\\d{2})/.exec(refFormatted);
+    const refLocal = refMatch
+      ? new Date(
+          Number.parseInt(refMatch[3]),
+          Number.parseInt(refMatch[1]) - 1,
+          Number.parseInt(refMatch[2]),
+          Number.parseInt(refMatch[4]),
+          Number.parseInt(refMatch[5]),
+          Number.parseInt(refMatch[6])
+        )
+      : null;
+    const offset = refLocal ? refLocal.getTime() - refUtc.getTime() : 0;
+    const utcDate = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+    const result = new Date(utcDate.getTime() - offset);
+    return Number.isNaN(result.getTime()) ? null : result;
+  } catch (e) {
+    const fallback = new Date(`${value}Z`);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
   }
 }
