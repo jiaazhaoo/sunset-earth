@@ -301,15 +301,15 @@ export function CameraViewer({ initialCamera }: Props) {
               layout="inline"
             />
           </div>
-
-          <CameraMetaPanel
+        </div>
+        {process.env.NODE_ENV !== "production" && (
+          <DebugFloatingPanel
+            score={cameraMeta?.score ?? null}
+            label={cameraMeta?.label ?? null}
             meta={cameraMeta}
             localTime={localTime}
             timezone={activeTimezone}
           />
-        </div>
-        {process.env.NODE_ENV !== "production" && (
-          <DebugFloatingPanel score={cameraMeta?.score ?? null} label={cameraMeta?.label ?? null} />
         )}
       </div>
     </section>
@@ -318,10 +318,24 @@ export function CameraViewer({ initialCamera }: Props) {
 function DebugFloatingPanel({
   score,
   label,
+  meta,
+  localTime,
+  timezone,
 }: {
   score: number | null;
   label: string | null;
+  meta: CameraMeta | null;
+  localTime: string;
+  timezone: string | null;
 }) {
+  const displayEvent = pickClosestEvent(
+    meta?.nextEvent ?? null,
+    meta?.followingEvent ?? null
+  );
+  const weatherText = meta
+    ? describeWeather(meta?.weatherClass)
+    : { title: "Waiting for weather", subtitle: "Updating the forecast", icon: "⏳" };
+
   return (
     <a
       href="/dev/pools"
@@ -332,66 +346,37 @@ function DebugFloatingPanel({
         <span>Priority</span>
       </p>
       <p className="mt-1 text-2xl font-semibold">{score ?? "--"}</p>
-      <p className="text-xs text-white/70">{label ?? "No label"}</p>
+      <p className="text-xs text-white/70 mb-3">{label ?? "No label"}</p>
+
+      <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
+        <div>
+          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-sky-400/80">
+            <span>{weatherText.icon}</span>
+            <span>Weather</span>
+          </p>
+          <p className="mt-0.5 text-sm font-medium">{weatherText.title}</p>
+          <p className="text-xs text-white/60">{weatherText.subtitle}</p>
+        </div>
+
+        <div>
+          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-rose-400/80">
+            <span>🌅</span>
+            <span>Sun event</span>
+          </p>
+          <p className="mt-0.5 text-sm font-medium">{describeEventTitle(displayEvent)}</p>
+          <p className="text-xs text-white/60">{describeEventTime(displayEvent, timezone)}</p>
+        </div>
+
+        <div>
+          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-violet-400/80">
+            <span>🕐</span>
+            <span>Local time</span>
+          </p>
+          <p className="mt-0.5 text-sm font-medium">{localTime || "--"}</p>
+          <p className="text-xs text-white/60">{timezone ?? "No timezone"}</p>
+        </div>
+      </div>
     </a>
-  );
-}
-
-function CameraMetaPanel({
-  meta,
-  localTime,
-  timezone,
-}: {
-  meta: CameraMeta | null;
-  localTime: string;
-  timezone: string | null;
-}) {
-  const displayEvent = pickUpcomingEvent(
-    meta?.nextEvent ?? null,
-    meta?.followingEvent ?? null
-  );
-  const weatherText = meta
-    ? describeWeather(meta?.weatherClass)
-    : { title: "Waiting for weather", subtitle: "Updating the forecast", icon: "⏳" };
-  return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-      <div className="rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50/60 to-blue-50/40 p-3 dark:border-sky-900/30 dark:from-sky-950/30 dark:to-blue-950/20">
-        <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-sky-600/80 dark:text-sky-400/80">
-          <span>{weatherText.icon}</span>
-          <span>Weather</span>
-        </div>
-        <p className="mt-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-          {weatherText.title}
-        </p>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">{weatherText.subtitle}</p>
-      </div>
-
-      <div className="rounded-xl border border-rose-100 bg-gradient-to-br from-rose-50/60 to-pink-50/40 p-3 dark:border-rose-900/30 dark:from-rose-950/30 dark:to-pink-950/20">
-        <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-rose-600/80 dark:text-rose-400/80">
-          <span>🌅</span>
-          <span>Sun event</span>
-        </div>
-        <p className="mt-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-          {describeEventTitle(displayEvent)}
-        </p>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          {describeEventTime(displayEvent, timezone)}
-        </p>
-      </div>
-
-      <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/60 to-purple-50/40 p-3 dark:border-violet-900/30 dark:from-violet-950/30 dark:to-purple-950/20">
-        <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-violet-600/80 dark:text-violet-400/80">
-          <span>🕐</span>
-          <span>Local time</span>
-        </div>
-        <p className="mt-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-          {localTime || "--"}
-        </p>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          {timezone ?? "No timezone"}
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -441,7 +426,7 @@ function describeEventTime(
   }
 }
 
-function pickUpcomingEvent(
+function pickClosestEvent(
   nextEvent: CameraMeta["nextEvent"] | null,
   followingEvent: CameraMeta["followingEvent"] | null
 ) {
@@ -457,13 +442,17 @@ function pickUpcomingEvent(
       event,
       timestamp: Date.parse(event.timeISO),
     }))
-    .filter((entry) => !Number.isNaN(entry.timestamp))
-    .sort((a, b) => a.timestamp - b.timestamp);
+    .filter((entry) => !Number.isNaN(entry.timestamp));
   if (!parsed.length) {
     return null;
   }
-  const future = parsed.find((entry) => entry.timestamp >= now);
-  return future?.event ?? parsed[parsed.length - 1].event;
+  // Find the event closest to current time (regardless of past or future)
+  const closest = parsed.reduce((prev, curr) => {
+    const prevDistance = Math.abs(prev.timestamp - now);
+    const currDistance = Math.abs(curr.timestamp - now);
+    return currDistance < prevDistance ? curr : prev;
+  }, parsed[0]);
+  return closest.event;
 }
 
 function CameraActions({
@@ -525,6 +514,28 @@ function CameraActions({
   return (
     <div className={containerClasses}>
       <button
+        onClick={handleCreateRoom}
+        disabled={!cameraId || creating}
+        className={secondaryButtonClasses}
+      >
+        {creating ? (
+          <>
+            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Creating room…
+          </>
+        ) : (
+          <>
+            <svg className="h-4 w-4 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            Watch with friends
+          </>
+        )}
+      </button>
+      <button
         onClick={onSwitchClick}
         disabled={loading}
         className={primaryButtonClasses}
@@ -548,28 +559,6 @@ function CameraActions({
           )}
         </span>
         <div className="absolute inset-0 -z-0 bg-gradient-to-r from-orange-600 to-rose-600 opacity-0 transition-opacity group-hover:opacity-100 dark:from-orange-700 dark:to-rose-700"></div>
-      </button>
-      <button
-        onClick={handleCreateRoom}
-        disabled={!cameraId || creating}
-        className={secondaryButtonClasses}
-      >
-        {creating ? (
-          <>
-            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Creating room…
-          </>
-        ) : (
-          <>
-            <svg className="h-4 w-4 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-            Watch with friends
-          </>
-        )}
       </button>
       {actionError && (
         <p className={errorClasses} role="alert">

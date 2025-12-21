@@ -184,32 +184,53 @@ function buildMeta(cameraId: string, ranking: RankingRow) {
 }
 
 function resolveUpcomingEvents(ranking: RankingRow) {
-  const events: Array<{ type: SolarEventType; timeISO: string }> = [];
+  // Also include sunrise and sunset from the ranking for closest event calculation
+  const allEvents: Array<{ type: SolarEventType; timeISO: string }> = [];
+
+  // Add sunrise if available
+  if (ranking.sunrise) {
+    allEvents.push({
+      type: "sunrise",
+      timeISO: ranking.sunrise,
+    });
+  }
+
+  // Add sunset if available
+  if (ranking.sunset) {
+    allEvents.push({
+      type: "sunset",
+      timeISO: ranking.sunset,
+    });
+  }
+
+  // Add next event if available
   if (ranking.next_event_type && ranking.next_event_time) {
-    events.push({
+    allEvents.push({
       type: ranking.next_event_type,
       timeISO: ranking.next_event_time,
     });
   }
+
+  // Add following event if available
   if (ranking.following_event_type && ranking.following_event_time) {
-    events.push({
+    allEvents.push({
       type: ranking.following_event_type,
       timeISO: ranking.following_event_time,
     });
   }
 
-  if (!events.length) {
+  if (!allEvents.length) {
     return [];
   }
 
   const now = Date.now();
-  const parsed = events
+  const parsed = allEvents
     .map((event) => {
       const timestamp = Date.parse(event.timeISO);
       if (Number.isNaN(timestamp)) {
         return null;
       }
-      return { ...event, timestamp };
+      return { ...event, timestamp, distance: Math.abs(timestamp - now) };
     })
     .filter(
       (
@@ -218,20 +239,21 @@ function resolveUpcomingEvents(ranking: RankingRow) {
         type: SolarEventType;
         timeISO: string;
         timestamp: number;
+        distance: number;
       } => Boolean(event)
     )
-    .sort((a, b) => a.timestamp - b.timestamp);
+    // Sort by distance from now (closest first)
+    .sort((a, b) => a.distance - b.distance);
 
   if (!parsed.length) {
     return [];
   }
 
-  const future = parsed.filter((event) => event.timestamp >= now);
-  const ordered = future.length ? future : parsed;
-  return ordered
+  // Return the 2 closest events
+  return parsed
+    .slice(0, 2)
     .map((event) => ({
       type: event.type,
       timeISO: new Date(event.timestamp).toISOString(),
-    }))
-    .slice(0, 2);
+    }));
 }

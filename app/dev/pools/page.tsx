@@ -12,6 +12,7 @@ type CameraWithPool = {
   weatherClass: string;
   poolId: number;
   linkAvailable: boolean;
+  tier?: string;
 };
 
 export default function PoolsDebugPage() {
@@ -64,7 +65,8 @@ export default function PoolsDebugPage() {
                 label: camera.label || 'unknown',
                 weatherClass: camera.weatherClass || 'unknown',
                 poolId: data.poolId,
-                linkAvailable: camera.linkAvailable !== false
+                linkAvailable: camera.linkAvailable !== false,
+                tier: camera.metadata?.tier || null
               });
             }
           } catch (err) {
@@ -254,6 +256,11 @@ export default function PoolsDebugPage() {
                     className="text-blue-300 hover:text-blue-200 underline underline-offset-2"
                   >
                     {camera.name}
+                    {camera.tier && (
+                      <span className="ml-2 text-xs text-gray-400 font-normal">
+                        ({camera.tier})
+                      </span>
+                    )}
                   </a>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
