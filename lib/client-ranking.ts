@@ -674,21 +674,21 @@ function buildWindows({
         startMs: sunsetMs - 30 * MINUTE,
         endMs: sunsetMs + 30 * MINUTE + delayMs,
       },
-      // Extended golden hour after (30-60 min after)
-      {
-        label: "sunset-extended-after",
-        score: 85,
-        priority: 3,
-        startMs: sunsetMs + 30 * MINUTE + delayMs,
-        endMs: sunsetMs + 60 * MINUTE + delayMs,
-      },
-      // Blue hour (60-90 min after sunset)
+      // Blue hour: immediately after golden hour, 45 minutes
       {
         label: "blue-hour-sunset",
         score: 90,
         priority: 2,
-        startMs: sunsetMs + 60 * MINUTE + delayMs,
-        endMs: sunsetMs + 90 * MINUTE + delayMs,
+        startMs: sunsetMs + 30 * MINUTE + delayMs,
+        endMs: sunsetMs + 75 * MINUTE + delayMs,
+      },
+      // Extended golden hour after: continue seamlessly after blue hour
+      {
+        label: "sunset-extended-after",
+        score: 85,
+        priority: 3,
+        startMs: sunsetMs + 75 * MINUTE + delayMs,
+        endMs: sunsetMs + 105 * MINUTE + delayMs,
       }
     );
   }
@@ -697,13 +697,13 @@ function buildWindows({
     const sunriseMs = sunrise.getTime();
     const advanceMs = sunriseAdvanceMinutes * MINUTE;
     entries.push(
-      // Blue hour (90-60 min before sunrise)
+      // Blue hour: directly precedes golden hour, 45 minutes
       {
         label: "blue-hour-sunrise",
         score: 90,
         priority: 2,
-        startMs: sunriseMs - 90 * MINUTE - advanceMs,
-        endMs: sunriseMs - 60 * MINUTE - advanceMs,
+        startMs: sunriseMs - 75 * MINUTE - advanceMs,
+        endMs: sunriseMs - 30 * MINUTE - advanceMs,
       },
       // Approaching sunrise (60 min before to 30 min before, adjusted for advance)
       {
