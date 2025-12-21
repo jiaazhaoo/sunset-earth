@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       sunsetDelay: 0,
       sunriseAdvance: 0,
       lastCheck: null,
+      metadata: null,
     });
 
     return NextResponse.json(availability);
