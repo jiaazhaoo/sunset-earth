@@ -14,8 +14,7 @@ type Props = {
   initialCamera: CameraRecord | null;
 };
 
-const STORAGE_KEY = "sunset-earth-seen";
-const UNAVAILABLE_KEY = "sunset-earth-unavailable";
+// No persistent seen/blacklist to avoid surprising excludes across sessions
 
 type CameraMeta = {
   cameraId: string;
@@ -184,53 +183,6 @@ export function CameraViewer({ initialCamera }: Props) {
     initialCamera?.id ? [initialCamera.id] : []
   );
   const [blacklist, setBlacklist] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(UNAVAILABLE_KEY);
-      if (stored) {
-        setBlacklist(JSON.parse(stored));
-      }
-    } catch {
-      setBlacklist([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(UNAVAILABLE_KEY, JSON.stringify(blacklist));
-  }, [blacklist]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as string[];
-        // Merge stored seen list with initial camera
-        setSeen((prev) => {
-          const merged = [...new Set([...prev, ...parsed])];
-          return merged;
-        });
-      }
-    } catch {
-      // Keep the initial camera ID if localStorage fails
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seen));
-  }, [seen]);
-
-  useEffect(() => {
-    if (camera?.id) {
-      setSeen((prev) =>
-        prev.includes(camera.id) ? prev : [...prev, camera.id]
-      );
-    }
-  }, [camera?.id]);
 
   const excludeQuery = useMemo(() => {
     const ids = [...new Set([...seen, ...blacklist])];
