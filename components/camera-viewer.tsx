@@ -471,29 +471,10 @@ function pickClosestEvent(
   nextEvent: CameraMeta["nextEvent"] | null,
   followingEvent: CameraMeta["followingEvent"] | null
 ) {
-  const events = [nextEvent, followingEvent].filter(Boolean) as Array<
-    NonNullable<CameraMeta["nextEvent"]>
-  >;
-  if (!events.length) {
-    return null;
-  }
-  const now = Date.now();
-  const parsed = events
-    .map((event) => ({
-      event,
-      timestamp: Date.parse(event.timeISO),
-    }))
-    .filter((entry) => !Number.isNaN(entry.timestamp));
-  if (!parsed.length) {
-    return null;
-  }
-  // Find the event closest to current time (regardless of past or future)
-  const closest = parsed.reduce((prev, curr) => {
-    const prevDistance = Math.abs(prev.timestamp - now);
-    const currDistance = Math.abs(curr.timestamp - now);
-    return currDistance < prevDistance ? curr : prev;
-  }, parsed[0]);
-  return closest.event;
+  // Prefer the next upcoming event; fall back to the following one if missing
+  if (nextEvent) return nextEvent;
+  if (followingEvent) return followingEvent;
+  return null;
 }
 
 function CameraActions({
