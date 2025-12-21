@@ -117,7 +117,8 @@ function VideoFrame({
             enablejsapi: 1,
             origin: window.location.origin,
             modestbranding: 1,
-            controls: 0,
+            controls: 1,
+            fs: 1,
           },
           events: {
             onReady: () => {
