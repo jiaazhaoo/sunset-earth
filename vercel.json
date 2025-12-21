@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/refresh-links",
+      "path": "/api/replace-link",
       "schedule": "0 * * * *"
     },
     {
