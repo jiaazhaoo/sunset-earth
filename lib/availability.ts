@@ -80,28 +80,31 @@ async function checkYoutubeAvailability(
 
     // Even if playability check returns null (parsing failed), continue with oembed check
     // as an additional verification layer
-    const oembedResponse = await fetch(
-      `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
-        watchProbe
-      )}`,
-      {
-        method: "GET",
-        headers: buildHeaders(options.withConsent),
-        cache: "no-store",
+    // NOTE: oembed check is now advisory only - YouTube's oembed API has become unreliable
+    // and returns 404 for many valid live streams. We use it as a positive signal but don't
+    // fail if it's unavailable.
+    try {
+      const oembedResponse = await fetch(
+        `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
+          watchProbe
+        )}`,
+        {
+          method: "GET",
+          headers: buildHeaders(options.withConsent),
+          cache: "no-store",
+        }
+      );
+      if (oembedResponse.ok && playable === "OK") {
+        // Both oembed and playability confirm availability
+        return { available: true, reason: "ok" };
       }
-    );
-    if (!oembedResponse.ok) {
-      const reason =
-        oembedResponse.status === 401 || oembedResponse.status === 403
-          ? "oembed_forbidden"
-          : "oembed_error";
-      return { available: false, reason };
+    } catch (error) {
+      // oembed check failed, but don't fail the entire availability check
+      console.log('[availability] oembed check failed, continuing with embed check:', error);
     }
 
-    // If playability status is explicitly OK, trust it
-    // If it's null (couldn't be determined), rely on embed check below
+    // If playability status is explicitly OK, trust it even if oembed failed
     if (playable === "OK") {
-      // Skip embed HTML check since playability is confirmed OK
       return { available: true, reason: "ok" };
     }
   }
