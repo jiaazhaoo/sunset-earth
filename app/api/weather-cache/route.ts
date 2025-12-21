@@ -81,7 +81,9 @@ async function executeWeatherCache(request: NextRequest) {
       }
       summary.processed++;
       try {
-        await fetchWeatherSnapshot(camera.lat, camera.lng, camera.id);
+        await fetchWeatherSnapshot(camera.lat, camera.lng, camera.id, {
+          forceRefresh: true,
+        });
         summary.updated++;
         summary.details.push({
           id: camera.id,

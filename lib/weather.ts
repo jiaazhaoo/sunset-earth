@@ -101,10 +101,16 @@ const SUN_HISTORY_TABLE = "camera_sun_history";
 export async function fetchWeatherSnapshot(
   lat: number,
   lng: number,
-  cacheSlug?: string
+  cacheSlug?: string,
+  options?: { forceRefresh?: boolean }
 ): Promise<OpenMeteoResponse> {
   const key = cacheSlug ?? `${lat.toFixed(4)},${lng.toFixed(4)}`;
   const now = Date.now();
+  const forceRefresh = options?.forceRefresh === true;
+
+  if (forceRefresh) {
+    return refreshWeatherSnapshot(key, lat, lng);
+  }
   const cached = weatherCache.get(key);
   if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.data;
