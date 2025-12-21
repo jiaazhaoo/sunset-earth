@@ -284,7 +284,9 @@ function parseDateInTimezone(value: string | undefined | null, timezone?: string
     });
     const refUtc = new Date(`${year}-${month}-${day}T00:00:00Z`);
     const refFormatted = formatter.format(refUtc);
-    const refMatch = /(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4}),?\\s*(\\d{1,2}):(\\d{2}):(\\d{2})/.exec(refFormatted);
+    const refMatch = /(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}):(\d{2}):(\d{2})/.exec(
+      refFormatted
+    );
     const refLocal = refMatch
       ? new Date(
           Number.parseInt(refMatch[3]),
