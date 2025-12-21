@@ -64,6 +64,7 @@ type ScoreOptions = {
   sunsetDelayMinutes?: number;
   sunriseAdvanceMinutes?: number;
   timezone?: string;
+  cameraTags?: string[];
 };
 
 /**
@@ -108,6 +109,7 @@ export function scoreCameraWeather(
     metadata,
     sunsetDelayMinutes: Math.max(0, options.sunsetDelayMinutes ?? 0),
     sunriseAdvanceMinutes: Math.max(0, options.sunriseAdvanceMinutes ?? 0),
+    cameraTags: options.cameraTags ?? [],
   });
 
   // 计算质量分数（Farpoint加权能见度）
@@ -170,6 +172,7 @@ function resolveTimeTier({
   metadata,
   sunsetDelayMinutes,
   sunriseAdvanceMinutes,
+  cameraTags,
 }: {
   sunrise: Date | null;
   sunset: Date | null;
@@ -179,6 +182,7 @@ function resolveTimeTier({
   metadata: CameraMetadata;
   sunsetDelayMinutes: number;
   sunriseAdvanceMinutes: number;
+  cameraTags: string[];
 }): TimeTierResult {
   const windows = buildWindows({
     sunrise,
@@ -194,9 +198,13 @@ function resolveTimeTier({
   }
 
   // Tier 2: 蓝调时刻
-  const blueHour = findMatchingWindow(windows, nowMs, 2);
-  if (blueHour) {
-    return blueHour;
+  // Coastline摄像头跳过蓝调时刻
+  const isCoastline = cameraTags.includes('Coastline');
+  if (!isCoastline) {
+    const blueHour = findMatchingWindow(windows, nowMs, 2);
+    if (blueHour) {
+      return blueHour;
+    }
   }
 
   // Tier 3: 扩展黄金时刻

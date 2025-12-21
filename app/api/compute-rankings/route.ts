@@ -157,6 +157,7 @@ async function executeComputeRankings() {
           sunsetDelayMinutes: camera.sunsetDelay ?? 0,
           sunriseAdvanceMinutes: camera.sunriseAdvance ?? 0,
           timezone: weather.timezone,
+          cameraTags: camera.tags,
         });
 
         // Store ranking
