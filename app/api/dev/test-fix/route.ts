@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
     sunsetDelay: 0,
     sunriseAdvance: 0,
     lastCheck: null,
+    metadata: null,
   };
 
   console.log(`\n=== Testing availability detection for: ${url} ===\n`);

@@ -20,6 +20,7 @@ function makeCamera(videoId: string, title: string) {
     sunsetDelay: 0,
     sunriseAdvance: 0,
     lastCheck: null,
+    metadata: null,
   };
   return camera;
 }

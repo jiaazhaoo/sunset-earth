@@ -69,6 +69,7 @@ async function analyzeCamera48() {
       sunsetDelay: 0,
       sunriseAdvance: 0,
       lastCheck: null,
+      metadata: null,
     });
 
     const playable = await isCameraAvailable(buildStub(live.videoId, live.title ?? ""));
