@@ -1,5 +1,5 @@
-import { assignToPool } from "../lib/camera-pools";
-import type { CameraEvaluation } from "../lib/client-ranking";
+import { assignToPool } from "@/lib/camera-pools";
+import type { CameraEvaluation } from "@/lib/client-ranking";
 
 console.log("=".repeat(70));
 console.log("Aurora Camera Pool Assignment Test");

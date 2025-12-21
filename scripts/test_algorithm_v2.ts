@@ -12,7 +12,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { scoreCameraWeather, rankCameras } from '@/lib/client-ranking-v2';
+import { scoreCameraWeather, rankCameras, type OpenMeteoResponse } from '@/lib/client-ranking-v2';
 import { parseCameraMetadata, type CameraMetadata } from '@/lib/camera-metadata-types';
 
 // ============================================================
@@ -33,58 +33,72 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Test Data - Mock Weather
 // ============================================================
 
-const CLEAR_WEATHER = {
+const BASE_NOW = new Date();
+const BASE_SUNRISE = new Date(BASE_NOW.getTime() - 2 * 60 * 60 * 1000); // 2 hours ago
+const BASE_SUNSET = new Date(BASE_NOW.getTime() + 2 * 60 * 60 * 1000);  // 2 hours from now
+
+const CLEAR_WEATHER: OpenMeteoResponse = {
   latitude: 40.7128,
   longitude: -74.006,
   timezone: 'America/New_York',
+  utc_offset_seconds: -5 * 3600,
   current_weather: {
+    time: BASE_NOW.toISOString(),
     weathercode: 0, // Clear sky
     is_day: 1,
   },
   hourly: {
+    time: [BASE_NOW.toISOString()],
     weathercode: [0],
     cloudcover: [10],
+    relativehumidity_2m: [50],
     visibility: [20000],
     precipitation: [0],
     snowfall: [0],
   },
   daily: {
-    sunrise: [new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()], // 2 hours ago
-    sunset: [new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()],  // 2 hours from now
+    time: [BASE_NOW.toISOString()],
+    sunrise: [BASE_SUNRISE.toISOString()],
+    sunset: [BASE_SUNSET.toISOString()],
   },
 };
 
-const CLOUDY_WEATHER = {
+const BASE_HOURLY = CLEAR_WEATHER.hourly!;
+const BASE_DAILY = CLEAR_WEATHER.daily!;
+
+const CLOUDY_WEATHER: OpenMeteoResponse = {
   ...CLEAR_WEATHER,
   current_weather: {
+    ...CLEAR_WEATHER.current_weather!,
     weathercode: 3, // Overcast
     is_day: 1,
   },
   hourly: {
-    ...CLEAR_WEATHER.hourly,
+    ...BASE_HOURLY,
     weathercode: [3],
     cloudcover: [85],
   },
 };
 
-const RAINY_WEATHER = {
+const RAINY_WEATHER: OpenMeteoResponse = {
   ...CLEAR_WEATHER,
   current_weather: {
+    ...CLEAR_WEATHER.current_weather!,
     weathercode: 61, // Rain
     is_day: 1,
   },
   hourly: {
-    ...CLEAR_WEATHER.hourly,
+    ...BASE_HOURLY,
     weathercode: [61],
     cloudcover: [90],
     precipitation: [3.5], // Moderate rain
   },
 };
 
-const LOW_VISIBILITY_WEATHER = {
+const LOW_VISIBILITY_WEATHER: OpenMeteoResponse = {
   ...CLEAR_WEATHER,
   hourly: {
-    ...CLEAR_WEATHER.hourly,
+    ...BASE_HOURLY,
     visibility: [3000], // 3km - low visibility
   },
 };
@@ -228,9 +242,10 @@ function testCriticalFixes() {
   const beforeSunrise30min = new Date(sunriseTime.getTime() - 30 * 60 * 1000);
   const afterSunset30min = new Date(sunsetTime.getTime() + 30 * 60 * 1000);
 
-  const weatherWithSolar = {
+  const weatherWithSolar: OpenMeteoResponse = {
     ...CLEAR_WEATHER,
     daily: {
+      time: BASE_DAILY.time,
       sunrise: [sunriseTime.toISOString()],
       sunset: [sunsetTime.toISOString()],
     },
@@ -267,7 +282,7 @@ function testCriticalFixes() {
   };
 
   const evalHighVis = scoreCameraWeather(
-    { ...CLEAR_WEATHER, hourly: { ...CLEAR_WEATHER.hourly, visibility: [20000] } },
+    { ...CLEAR_WEATHER, hourly: { ...BASE_HOURLY, visibility: [20000] } },
     now,
     { cameraMetadata: farpointMetadata }
   );
@@ -306,9 +321,9 @@ function testCriticalFixes() {
     weatherTolerance: { clear: true, partlyCloudy: false, lightRain: false, lightSnow: false },
   };
 
-  const daytimeWeather = {
+  const daytimeWeather: OpenMeteoResponse = {
     ...CLEAR_WEATHER,
-    current_weather: { ...CLEAR_WEATHER.current_weather, is_day: 1 },
+    current_weather: { ...CLEAR_WEATHER.current_weather!, is_day: 1 },
   };
 
   const evalAuroraDaytime = scoreCameraWeather(daytimeWeather, now, {
@@ -501,7 +516,11 @@ function testTierTiebreaker() {
     { camera: { camera_id: 7 }, evaluation: { ...highScoreT2, score: 70 }, metadata: t1Metadata },
   ];
 
+  const tierLookup = new Map(camerasMultiTier.map((c) => [c.camera.camera_id, c.metadata.tier]));
   const rankedMultiTier = rankCameras(camerasMultiTier);
+  const rankedOrder = rankedMultiTier.map(
+    (c) => `${tierLookup.get(c.camera.camera_id)}(#${c.camera.camera_id})`
+  );
 
   const correctOrder =
     rankedMultiTier[0].camera.camera_id === 6 && // t0 first
@@ -513,14 +532,14 @@ function testTierTiebreaker() {
       'Tier Order (t0 > t1 > t2)',
       true,
       'Cameras ranked correctly: t0(#6) > t1(#7) > t2(#5)',
-      { order: rankedMultiTier.map((c) => `${c.metadata?.tier}(#${c.camera.camera_id})`) }
+      { order: rankedOrder }
     );
   } else {
     addResult(
       'Tier Order (t0 > t1 > t2)',
       false,
       'Tier ordering incorrect',
-      { order: rankedMultiTier.map((c) => `${c.metadata?.tier}(#${c.camera.camera_id})`) }
+      { order: rankedOrder }
     );
   }
 }

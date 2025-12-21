@@ -8,7 +8,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { scoreCameraWeather } from '@/lib/client-ranking-v2';
+import { scoreCameraWeather, type OpenMeteoResponse } from '@/lib/client-ranking-v2';
 import { parseCameraMetadata } from '@/lib/camera-metadata-types';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -53,21 +53,29 @@ async function quickVerify() {
     return false;
   }
 
-  const mockWeather = {
+  const now = new Date();
+  const sunrise = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+  const sunset = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+
+  const mockWeather: OpenMeteoResponse = {
     latitude: 40.7,
     longitude: -74,
     timezone: 'America/New_York',
-    current_weather: { weathercode: 0, is_day: 1 },
+    utc_offset_seconds: -5 * 3600,
+    current_weather: { time: now.toISOString(), weathercode: 0, is_day: 1 },
     hourly: {
+      time: [now.toISOString()],
       weathercode: [0],
       cloudcover: [10],
+      relativehumidity_2m: [50],
       visibility: [20000],
       precipitation: [0],
       snowfall: [0],
     },
     daily: {
-      sunrise: [new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()],
-      sunset: [new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()],
+      time: [now.toISOString()],
+      sunrise: [sunrise.toISOString()],
+      sunset: [sunset.toISOString()],
     },
   };
 

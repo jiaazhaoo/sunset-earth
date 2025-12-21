@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "../lib/supabaseAdmin";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 async function checkCamera131() {
   const { data, error } = await supabaseAdmin

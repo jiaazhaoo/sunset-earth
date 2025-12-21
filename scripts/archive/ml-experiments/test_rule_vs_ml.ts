@@ -2,10 +2,10 @@
  * Compare rule-based vs ML predictions for golden hour scenarios
  */
 
-import { assignToPool } from "../lib/camera-pools";
+import { assignToPool } from "@/lib/camera-pools";
 import { exec } from "child_process";
 import { promisify } from "util";
-import type { CameraEvaluation } from "../lib/client-ranking";
+import type { CameraEvaluation } from "@/lib/client-ranking";
 
 const execAsync = promisify(exec);
 

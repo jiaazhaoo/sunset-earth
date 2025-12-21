@@ -2,8 +2,8 @@
  * Test ML-based pool assignment
  */
 
-import { assignToPoolML, assignToPoolMLBatch } from "../lib/ml-pool-assignment";
-import type { CameraEvaluation } from "../lib/client-ranking";
+import { assignToPoolML, assignToPoolMLBatch } from "@/lib/ml-pool-assignment";
+import type { CameraEvaluation } from "@/lib/client-ranking";
 
 async function testSinglePrediction() {
   console.log("=== Testing Single Prediction ===\n");
