@@ -279,14 +279,6 @@ function buildWindows({
     const sunsetMs = sunset.getTime();
     const delayMs = sunsetDelayMinutes * MINUTE;
     entries.push(
-      // 扩展黄金时刻（前）：日落前45-20分钟
-      {
-        label: "sunset-extended",
-        score: 85,
-        priority: 3,
-        startMs: sunsetMs - 45 * MINUTE,
-        endMs: sunsetMs - 20 * MINUTE,
-      },
       // 黄金时刻核心：日落前20分钟 → 日落后15分钟（太阳高度角0-6度）
       {
         label: "sunset-primary",
@@ -299,17 +291,9 @@ function buildWindows({
       {
         label: "blue-hour-sunset",
         score: 95,
-        priority: 2,
+        priority: 1,
         startMs: sunsetMs + 15 * MINUTE + delayMs,
         endMs: sunsetMs + 40 * MINUTE + delayMs,
-      },
-      // 扩展黄金时刻（后）：蓝调后余晖，日落后40-60分钟
-      {
-        label: "sunset-extended-after",
-        score: 85,
-        priority: 3,
-        startMs: sunsetMs + 40 * MINUTE + delayMs,
-        endMs: sunsetMs + 60 * MINUTE + delayMs,
       }
     );
   }
@@ -318,19 +302,11 @@ function buildWindows({
     const sunriseMs = sunrise.getTime();
     const advanceMs = sunriseAdvanceMinutes * MINUTE;
     entries.push(
-      // 扩展黄金时刻（前）：日出前60-40分钟（蓝调前的深蓝天空）
-      {
-        label: "sunrise-extended",
-        score: 85,
-        priority: 3,
-        startMs: sunriseMs - 60 * MINUTE - advanceMs,
-        endMs: sunriseMs - 40 * MINUTE - advanceMs,
-      },
       // 蓝调时刻：日出前40-20分钟（民用曙暮光，太阳在地平线下4-8度）
       {
         label: "blue-hour-sunrise",
         score: 95,
-        priority: 2,
+        priority: 1,
         startMs: sunriseMs - 40 * MINUTE - advanceMs,
         endMs: sunriseMs - 20 * MINUTE - advanceMs,
       },

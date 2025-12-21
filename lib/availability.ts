@@ -1,6 +1,7 @@
 import type { CameraRecord } from "@/lib/cameras";
 
 const TTL_MS = 15 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 10 * 1000; // 10 seconds timeout for each fetch
 
 export type AvailabilityReason =
   | "ok"
@@ -26,6 +27,33 @@ const availabilityCache = new Map<
   string,
   { result: AvailabilityResult; fetchedAt: number }
 >();
+
+/**
+ * Fetch with timeout protection
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Fetch timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+}
 
 export async function isCameraAvailable(
   camera: CameraRecord,
@@ -71,9 +99,15 @@ async function checkYoutubeAvailability(
   const watchProbe = buildYoutubeWatchUrl(url);
   if (watchProbe) {
     const playable = await fetchPlayabilityStatus(watchProbe, options);
+    // Treat LOGIN_REQUIRED as a soft warning, not a hard failure. YouTube often
+    // returns this for age-restricted or region-locked videos even though they
+    // still play in embedded mode with consent. We avoid marking the camera
+    // unavailable to prevent mass false negatives.
+    const isSoftBlocked = playable === "LOGIN_REQUIRED";
+
     // Check for various unavailable statuses
     // YouTube can return: "UNPLAYABLE", "ERROR", "LOGIN_REQUIRED", etc.
-    if (playable && playable !== "OK") {
+    if (playable && playable !== "OK" && !isSoftBlocked) {
       console.log(`[availability] Playability status: ${playable}`);
       return { available: false, reason: "playability_blocked" };
     }
@@ -104,7 +138,7 @@ async function checkYoutubeAvailability(
     }
 
     // If playability status is explicitly OK, trust it even if oembed failed
-    if (playable === "OK") {
+    if (playable === "OK" || isSoftBlocked) {
       return { available: true, reason: "ok" };
     }
   }
