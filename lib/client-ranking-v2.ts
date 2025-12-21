@@ -271,37 +271,37 @@ function buildWindows({
     const sunsetMs = sunset.getTime();
     const delayMs = sunsetDelayMinutes * MINUTE;
     entries.push(
-      // 扩展黄金时刻（前）：日落前60-30分钟
+      // 扩展黄金时刻（前）：日落前45-30分钟
       {
         label: "sunset-extended",
         score: 85,
         priority: 3,
-        startMs: sunsetMs - 60 * MINUTE,
+        startMs: sunsetMs - 45 * MINUTE,
         endMs: sunsetMs - 30 * MINUTE,
       },
-      // 黄金时刻核心：日落前30分钟 → 日落后30分钟
+      // 黄金时刻核心：日落前20分钟 → 日落后20分钟（太阳高度角0-6度）
       {
         label: "sunset-primary",
         score: 100,
         priority: 1,
-        startMs: sunsetMs - 30 * MINUTE,
-        endMs: sunsetMs + 30 * MINUTE + delayMs,
+        startMs: sunsetMs - 20 * MINUTE,
+        endMs: sunsetMs + 20 * MINUTE + delayMs,
       },
-      // 蓝调时刻：紧接黄金时刻之后，持续45分钟
+      // 蓝调时刻：日落后15-40分钟（民用曙暮光，太阳在地平线下4-8度）
       {
         label: "blue-hour-sunset",
         score: 95,
         priority: 2,
-        startMs: sunsetMs + 30 * MINUTE + delayMs,
-        endMs: sunsetMs + 75 * MINUTE + delayMs,
+        startMs: sunsetMs + 15 * MINUTE + delayMs,
+        endMs: sunsetMs + 40 * MINUTE + delayMs,
       },
-      // 扩展黄金时刻（后）：衔接蓝调结束后，保持连贯
+      // 扩展黄金时刻（后）：蓝调后余晖，日落后40-60分钟
       {
         label: "sunset-extended-after",
         score: 85,
         priority: 3,
-        startMs: sunsetMs + 75 * MINUTE + delayMs,
-        endMs: sunsetMs + 105 * MINUTE + delayMs,
+        startMs: sunsetMs + 40 * MINUTE + delayMs,
+        endMs: sunsetMs + 60 * MINUTE + delayMs,
       }
     );
   }
@@ -310,29 +310,37 @@ function buildWindows({
     const sunriseMs = sunrise.getTime();
     const advanceMs = sunriseAdvanceMinutes * MINUTE;
     entries.push(
-      // 蓝调时刻：紧接在日出黄金时刻之前，持续45分钟
-      {
-        label: "blue-hour-sunrise",
-        score: 95,
-        priority: 2,
-        startMs: sunriseMs - 75 * MINUTE - advanceMs,
-        endMs: sunriseMs - 30 * MINUTE - advanceMs,
-      },
-      // 黄金时刻核心：日出前30分钟 → 日出后30分钟
-      {
-        label: "sunrise-primary",
-        score: 100,
-        priority: 1,
-        startMs: sunriseMs - 30 * MINUTE - advanceMs,
-        endMs: sunriseMs + 30 * MINUTE,
-      },
-      // 扩展黄金时刻（后）：日出后30-60分钟
+      // 扩展黄金时刻（前）：日出前60-40分钟（蓝调前的深蓝天空）
       {
         label: "sunrise-extended",
         score: 85,
         priority: 3,
-        startMs: sunriseMs + 30 * MINUTE,
-        endMs: sunriseMs + 60 * MINUTE,
+        startMs: sunriseMs - 60 * MINUTE - advanceMs,
+        endMs: sunriseMs - 40 * MINUTE - advanceMs,
+      },
+      // 蓝调时刻：日出前40-15分钟（民用曙暮光，太阳在地平线下4-8度）
+      {
+        label: "blue-hour-sunrise",
+        score: 95,
+        priority: 2,
+        startMs: sunriseMs - 40 * MINUTE - advanceMs,
+        endMs: sunriseMs - 15 * MINUTE - advanceMs,
+      },
+      // 黄金时刻核心：日出前20分钟 → 日出后20分钟（太阳高度角0-6度）
+      {
+        label: "sunrise-primary",
+        score: 100,
+        priority: 1,
+        startMs: sunriseMs - 20 * MINUTE - advanceMs,
+        endMs: sunriseMs + 20 * MINUTE,
+      },
+      // 扩展黄金时刻（后）：日出后20-45分钟
+      {
+        label: "sunrise-extended-after",
+        score: 85,
+        priority: 3,
+        startMs: sunriseMs + 20 * MINUTE,
+        endMs: sunriseMs + 45 * MINUTE,
       }
     );
   }
