@@ -66,11 +66,12 @@ export async function GET() {
           const sunrise = new Date(sunriseStr);
           const sunset = new Date(sunsetStr);
 
-          // Blue hour: 60-90 minutes before sunrise, 60-90 minutes after sunset
-          const blueHourMorningStart = new Date(sunrise.getTime() - 90 * 60000);
-          const blueHourMorningEnd = new Date(sunrise.getTime() - 60 * 60000);
-          const blueHourEveningStart = new Date(sunset.getTime() + 60 * 60000);
-          const blueHourEveningEnd = new Date(sunset.getTime() + 90 * 60000);
+          // Blue hour: directly before sunrise, and immediately after sunset (no gaps)
+          const blueHourDurationMs = 45 * 60000; // 45 minutes
+          const blueHourMorningStart = new Date(sunrise.getTime() - blueHourDurationMs);
+          const blueHourMorningEnd = sunrise;
+          const blueHourEveningStart = sunset;
+          const blueHourEveningEnd = new Date(sunset.getTime() + blueHourDurationMs);
 
           return {
             cameraId: camera.camera_id,
