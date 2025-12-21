@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { listCameras } from "@/lib/cameras";
-import { getBulkCachedWeatherSnapshots } from "@/lib/weather";
+import {
+  getBulkCachedWeatherSnapshots,
+  fetchWeatherSnapshot,
+} from "@/lib/weather";
 import { scoreCameraWeather, rankCameras } from "@/lib/client-ranking";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +36,13 @@ export async function GET() {
 
     // Compute scores for all cameras
     for (const camera of cameras) {
-      const weather = weatherMap.get(camera.id);
+      let weather = weatherMap.get(camera.id);
+      if (!weather) {
+        // Fallback: fetch fresh weather when cache miss
+        if (camera.lat === null || camera.lng === null) continue;
+        weather = await fetchWeatherSnapshot(camera.lat, camera.lng, camera.id);
+      }
+
       if (!weather) {
         continue;
       }
