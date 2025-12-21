@@ -1,7 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { CameraRecord } from "@/lib/cameras";
+
+declare global {
+  interface Window {
+    YT: any;
+    onYouTubeIframeAPIReady: () => void;
+  }
+}
 
 type Props = {
   initialCamera: CameraRecord | null;
@@ -36,6 +43,44 @@ type BestCameraResponse = {
   meta?: CameraMeta | null;
 };
 
+let ytApiPromise: Promise<void> | null = null;
+
+function loadYouTubeAPI() {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.YT && window.YT.Player) return Promise.resolve();
+  if (!ytApiPromise) {
+    ytApiPromise = new Promise<void>((resolve) => {
+      const script = document.createElement("script");
+      script.src = "https://www.youtube.com/iframe_api";
+      script.async = true;
+      document.body.appendChild(script);
+      (window as any).onYouTubeIframeAPIReady = () => resolve();
+    });
+  }
+  return ytApiPromise;
+}
+
+function extractYoutubeId(url: string | null | undefined) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "youtu.be") {
+      return parsed.pathname.replace("/", "") || null;
+    }
+    if (parsed.searchParams.has("v")) {
+      return parsed.searchParams.get("v");
+    }
+    const parts = parsed.pathname.split("/");
+    const embedIndex = parts.findIndex((p) => p === "embed" || p === "live");
+    if (embedIndex >= 0 && parts[embedIndex + 1]) {
+      return parts[embedIndex + 1];
+    }
+  } catch (error) {
+    console.warn("Failed to parse youtube id", error);
+  }
+  return null;
+}
+
 function VideoFrame({
   camera,
   onStreamError,
@@ -43,59 +88,88 @@ function VideoFrame({
   camera: CameraRecord;
   onStreamError: () => void;
 }) {
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<any>(null);
   const fallbackTimer = useRef<NodeJS.Timeout | null>(null);
+  const videoId = extractYoutubeId(camera.embedUrl || camera.sourceUrl);
 
   useEffect(() => {
-    if (fallbackTimer.current) {
-      clearTimeout(fallbackTimer.current);
-    }
-    fallbackTimer.current = setTimeout(() => {
-      onStreamError();
-    }, 5000);
+    let cancelled = false;
+    const setup = async () => {
+      if (!containerRef.current || !videoId) {
+        onStreamError();
+        return;
+      }
+      if (playerRef.current) {
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
+      await loadYouTubeAPI();
+      if (cancelled) return;
+      try {
+        const player = new window.YT.Player(containerRef.current, {
+          videoId,
+          playerVars: {
+            autoplay: 1,
+            mute: 1,
+            rel: 0,
+            playsinline: 1,
+            enablejsapi: 1,
+            origin: window.location.origin,
+            modestbranding: 1,
+            controls: 0,
+          },
+          events: {
+            onReady: () => {
+              player.mute?.();
+              player.playVideo?.();
+              if (fallbackTimer.current) {
+                clearTimeout(fallbackTimer.current);
+              }
+              fallbackTimer.current = setTimeout(() => {
+                onStreamError();
+              }, 5000);
+            },
+            onError: (event: { data: number }) => {
+              console.warn("youtube player error", event.data);
+              onStreamError();
+            },
+            onStateChange: (event: { data: number }) => {
+              if (event.data === window.YT.PlayerState.PLAYING) {
+                if (fallbackTimer.current) {
+                  clearTimeout(fallbackTimer.current);
+                }
+              }
+            },
+          },
+        });
+        playerRef.current = player;
+      } catch (error) {
+        console.warn("create player failed", error);
+        onStreamError();
+      }
+    };
+    setup();
     return () => {
+      cancelled = true;
       if (fallbackTimer.current) {
         clearTimeout(fallbackTimer.current);
       }
+      if (playerRef.current) {
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
     };
-  }, [camera.embedUrl, onStreamError]);
+  }, [videoId, camera.id, onStreamError]);
 
   return (
-    <iframe
-      ref={iframeRef}
-      key={camera.embedUrl}
-      src={camera.embedUrl}
-      title={camera.name}
-      allow="autoplay; encrypted-media; fullscreen"
-      allowFullScreen
-      className="h-full w-full"
-      onLoad={() => {
-        if (fallbackTimer.current) {
-          clearTimeout(fallbackTimer.current);
-        }
-        try {
-          const text =
-            iframeRef.current?.contentDocument?.body?.innerText ?? "";
-          const unavailablePhrases = [
-            "This live stream recording is not available",
-            "This live event is no longer available",
-            "Video unavailable",
-            "Private video",
-          ];
-          if (unavailablePhrases.some((phrase) => text.includes(phrase))) {
-            onStreamError();
-          }
-        } catch (error) {
-          console.warn("iframe inspection failed", error);
-        }
-      }}
-      onError={() => {
-        if (fallbackTimer.current) {
-          clearTimeout(fallbackTimer.current);
-        }
-        onStreamError();
-      }}
-    />
+    <div className="h-full w-full">
+      <div
+        ref={containerRef}
+        className="h-full w-full"
+        aria-label={camera.name}
+      />
+    </div>
   );
 }
 
@@ -165,7 +239,15 @@ export function CameraViewer({ initialCamera }: Props) {
     return `?${params.toString()}`;
   }, [seen, blacklist]);
 
-  const handleSwitch = async () => {
+  const markUnavailable = useCallback((cameraId: string) => {
+    fetch("/api/camera-availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cameraId, available: false }),
+    }).catch((error) => console.warn("mark unavailable failed", error));
+  }, []);
+
+  const handleSwitch = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -194,11 +276,17 @@ export function CameraViewer({ initialCamera }: Props) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [excludeQuery]);
 
-  const handleStreamFailure = async () => {
-    console.warn("Camera stream reported a failure.");
-  };
+  const handleStreamFailure = useCallback(async () => {
+    if (camera?.id) {
+      setBlacklist((prev) =>
+        prev.includes(camera.id) ? prev : [...prev, camera.id]
+      );
+      markUnavailable(camera.id);
+    }
+    await handleSwitch();
+  }, [camera?.id, handleSwitch, markUnavailable]);
 
   useEffect(() => {
     if (!camera?.id) {
