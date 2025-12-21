@@ -10,7 +10,7 @@
  * 6. 蓝调时刻天气影响降低（0.98）
  */
 
-import type { CameraMetadata } from './camera-metadata-types';
+import type { CameraMetadata, CameraTier } from './camera-metadata-types';
 import { parseCameraMetadata, getDefaultMetadata } from './camera-metadata-types';
 import type { WeatherClassDetailed } from './weather-classification';
 import { classifyWeatherDetailed, getWeatherWeight } from './weather-classification';
