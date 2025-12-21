@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listCameras } from "@/lib/cameras";
-import {
-  getCachedWeatherSnapshot,
-  scoreCameraWeather,
-} from "@/lib/weather";
+import { getCachedWeatherSnapshot } from "@/lib/weather";
+import { scoreCameraWeather } from "@/lib/client-ranking-v2";
 import { isCameraAvailable } from "@/lib/availability";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isTaskLocked, withTaskLock } from "@/lib/task-lock";
@@ -153,14 +151,12 @@ async function executeComputeRankings() {
           continue;
         }
 
-        // Score the camera
-        const hasCitySkyline = camera.tags?.some((tag) =>
-          tag.toLowerCase().includes("city skyline")
-        );
+        // Score the camera using v2 algorithm with metadata
         const evaluation = scoreCameraWeather(weather, now, {
-          hasCitySkyline,
+          cameraMetadata: camera.metadata,
           sunsetDelayMinutes: camera.sunsetDelay ?? 0,
           sunriseAdvanceMinutes: camera.sunriseAdvance ?? 0,
+          timezone: weather.timezone,
         });
 
         // Store ranking
