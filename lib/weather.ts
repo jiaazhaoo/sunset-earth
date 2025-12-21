@@ -200,7 +200,7 @@ async function refreshWeatherSnapshot(
     hourly:
       "weathercode,cloudcover,relativehumidity_2m,visibility,precipitation,snowfall",
     daily: "sunrise,sunset",
-    timezone: "UTC",
+    timezone: "auto",
     forecast_days: "2",
     current_weather: "true",
   });
