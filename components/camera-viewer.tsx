@@ -471,10 +471,28 @@ function pickClosestEvent(
   nextEvent: CameraMeta["nextEvent"] | null,
   followingEvent: CameraMeta["followingEvent"] | null
 ) {
-  // Prefer the next upcoming event; fall back to the following one if missing
-  if (nextEvent) return nextEvent;
-  if (followingEvent) return followingEvent;
-  return null;
+  const events = [nextEvent, followingEvent].filter(Boolean) as Array<
+    NonNullable<CameraMeta["nextEvent"]>
+  >;
+  if (!events.length) {
+    return null;
+  }
+  const now = Date.now();
+  const parsed = events
+    .map((event) => ({
+      event,
+      timestamp: Date.parse(event.timeISO),
+    }))
+    .filter((entry) => !Number.isNaN(entry.timestamp));
+  if (!parsed.length) {
+    return null;
+  }
+  const closest = parsed.reduce((prev, curr) => {
+    const prevDistance = Math.abs(prev.timestamp - now);
+    const currDistance = Math.abs(curr.timestamp - now);
+    return currDistance < prevDistance ? curr : prev;
+  }, parsed[0]);
+  return closest.event;
 }
 
 function CameraActions({
