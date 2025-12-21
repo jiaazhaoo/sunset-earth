@@ -192,7 +192,7 @@ export function getWeatherWeight(
       return 1.0;
 
     case 'partly-cloudy':
-      return 0.85;
+      return 0.9; // lower penalty for partly cloudy
 
     case 'cloudy':
       return 0.65;
