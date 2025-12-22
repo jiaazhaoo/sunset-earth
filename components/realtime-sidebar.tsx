@@ -1,6 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   RealtimeKitProvider,
   useRealtimeKitClient,
@@ -8,7 +16,8 @@ import {
   useRealtimeKitSelector,
 } from "@cloudflare/realtimekit-react";
 import {
-  RtkChat,
+  RtkChatComposerView,
+  RtkChatMessagesUiPaginated,
   RtkParticipantsAudio,
   RtkNotifications,
   RtkDialogManager,
@@ -20,13 +29,28 @@ import {
 
 type Props = {
   roomId: string;
+  children: ReactNode;
 };
 
-export function RealtimeSidebar({ roomId }: Props) {
-  return <RealtimeProviderShell roomId={roomId} />;
+type RealtimeShellContextValue = {
+  status: MeetingConnectionStatus;
+  error: string | null;
+  roomId: string;
+};
+
+const RealtimeShellContext = createContext<RealtimeShellContextValue | null>(
+  null
+);
+
+function useRealtimeShell() {
+  const context = useContext(RealtimeShellContext);
+  if (!context) {
+    throw new Error("RoomRealtimeProvider is missing.");
+  }
+  return context;
 }
 
-function RealtimeProviderShell({ roomId }: Props) {
+export function RoomRealtimeProvider({ roomId, children }: Props) {
   const [meeting, initMeeting] = useRealtimeKitClient();
   const [status, setStatus] =
     useState<MeetingConnectionStatus>("connecting");
@@ -110,76 +134,10 @@ function RealtimeProviderShell({ roomId }: Props) {
 
   return (
     <RealtimeKitProvider value={meeting}>
-      <SidebarContent status={status} error={error} roomId={roomId} />
+      <RealtimeShellContext.Provider value={{ status, error, roomId }}>
+        {children}
+      </RealtimeShellContext.Provider>
     </RealtimeKitProvider>
-  );
-}
-
-function SidebarContent({
-  status,
-  error,
-  roomId,
-}: {
-  status: MeetingConnectionStatus;
-  error: string | null;
-  roomId: string;
-}) {
-  const { meeting } = useRealtimeKitMeeting();
-
-  if (status === "error" || error) {
-    return (
-      <div className="rounded-3xl border border-red-400/40 bg-red-500/10 p-6 text-sm text-red-100">
-        {error ?? "We couldn’t join the realtime meeting."}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-5">
-      <RoomVoicePanel status={status} />
-      <ParticipantsPanel
-        isReady={Boolean(meeting && status === "connected")}
-        roomId={roomId}
-      />
-      {meeting && status === "connected" ? (
-        <>
-          <div className="rounded-3xl border border-white/10 bg-white/5 shadow-2xl shadow-black/30 backdrop-blur">
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-orange-200">
-                  Live chat
-                </p>
-                <p className="text-lg font-semibold text-white">Talk with friends</p>
-              </div>
-            </div>
-            <div className="h-[420px] min-h-[420px]">
-              <RtkChat
-                meeting={meeting}
-                style={{
-                  "--rtk-color-background-base": "rgba(15,23,42,0.85)",
-                  "--rtk-color-background-elevated": "rgba(15,23,42,0.7)",
-                  "--rtk-color-border": "rgba(255,255,255,0.1)",
-                  "--rtk-color-text-primary": "#f8fafc",
-                  "--rtk-color-text-secondary": "#cbd5f5",
-                  "--rtk-color-surface": "rgba(15,23,42,0.8)",
-                  "--rtk-color-muted": "rgba(148,163,184,0.25)",
-                  "--rtk-border-radius": "18px",
-                }}
-              />
-            </div>
-          </div>
-          <div className="sr-only">
-            <RtkParticipantsAudio meeting={meeting} />
-            <RtkNotifications meeting={meeting} />
-            <RtkDialogManager meeting={meeting} />
-          </div>
-        </>
-      ) : (
-        <div className="rounded-3xl border border-dashed border-white/20 bg-white/5 p-6 text-sm text-white/70">
-          Connecting to realtime meeting...
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -189,14 +147,16 @@ type ParticipantInfo = {
   picture?: string;
 };
 
-function ParticipantsPanel({
-  isReady,
-  roomId,
+export function RoomMembersCard({
+  variant = "card",
+  shareUrl,
 }: {
-  isReady: boolean;
-  roomId: string;
+  variant?: "card" | "flat";
+  shareUrl?: string;
 }) {
+  const { status, error, roomId } = useRealtimeShell();
   const { meeting } = useRealtimeKitMeeting();
+  const [copied, setCopied] = useState(false);
   const participants = useRealtimeKitSelector<ParticipantInfo[]>((client) => {
     if (!client || !client.participants) {
       return [];
@@ -250,42 +210,95 @@ function ParticipantsPanel({
 
   usePresenceReporter({
     roomId,
-    isReady,
+    isReady: Boolean(meeting && status === "connected"),
     count: participantsWithSelf.length,
   });
 
+  const containerClass =
+    variant === "card"
+      ? "rounded-2xl border border-white/10 bg-white/5 p-4 shadow-lg shadow-black/20 backdrop-blur"
+      : "p-0";
+
+  const showBadge = variant === "card";
+  const isCompact = variant === "flat";
+
+  const handleCopy = async () => {
+    if (!shareUrl) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/30 backdrop-blur">
+    <div className={containerClass}>
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-white">Room members</p>
-          <p className="text-xs text-white/60">
-            {isReady
+          <p className="text-xs text-white/55">
+            {meeting && status === "connected"
               ? `${participantsWithSelf.length || 0} active now`
               : "Connecting to presence..."}
           </p>
         </div>
-      </div>
-      <div className="mt-4 flex flex-wrap gap-3">
-        {!isReady ? (
-          <p className="text-sm text-white/70">Waiting for guests to join…</p>
-        ) : participantsWithSelf.length === 0 ? (
-          <p className="text-sm text-white/70">
-            It’s just you for now. Share the link to invite friends!
-          </p>
-        ) : (
-          <>
-            {avatars.map((participant) => (
-              <ParticipantAvatar key={participant.id} participant={participant} />
-            ))}
-            {remaining > 0 && (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-dashed border-white/30 text-xs text-white/70">
-                +{remaining}
-              </div>
-            )}
-          </>
+        {showBadge && (
+          <span className="rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.35em] text-white/55">
+            Live
+          </span>
         )}
       </div>
+      {error ? (
+        <p className="mt-3 text-sm text-red-200">{error}</p>
+      ) : (
+        <div className={isCompact ? "mt-2 flex flex-wrap items-center gap-3" : "mt-3 flex flex-wrap gap-3"}>
+          {!meeting || status !== "connected" ? (
+            <p className="text-sm text-white/65">Waiting for guests to join…</p>
+          ) : participantsWithSelf.length === 0 ? (
+            <p className="text-sm text-white/65">
+              It’s just you for now. Share the link to invite friends!
+            </p>
+          ) : (
+            <>
+              {avatars.map((participant) => (
+                <ParticipantAvatar key={participant.id} participant={participant} />
+              ))}
+              {remaining > 0 && (
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-dashed border-white/30 text-xs text-white/70">
+                  +{remaining}
+                </div>
+              )}
+              {shareUrl && (
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  title={copied ? "Copied" : "Copy link"}
+                  aria-label={copied ? "Copied" : "Copy link"}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-amber-500 text-white shadow-lg shadow-orange-500/30 transition hover:shadow-xl"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 5v14" />
+                    <path d="M5 12h14" />
+                  </svg>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -316,6 +329,73 @@ function ParticipantAvatar({ participant }: { participant: ParticipantInfo }) {
   return (
     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">
       {initials}
+    </div>
+  );
+}
+
+export function LiveChatCard() {
+  const { status, error, roomId } = useRealtimeShell();
+  const { meeting } = useRealtimeKitMeeting();
+
+  if (status === "error" || error) {
+    return (
+      <div className="rounded-3xl border border-red-400/40 bg-red-500/10 p-6 text-sm text-red-100 shadow-xl shadow-black/30">
+        {error ?? "We couldn’t join the realtime meeting."}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-[420px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(255,197,143,0.12),_rgba(15,16,22,0.92)_55%)] shadow-2xl shadow-black/30 backdrop-blur">
+      <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-orange-200">
+            Live chat
+          </p>
+          <p className="text-base font-semibold text-white">Talk with friends</p>
+        </div>
+        <RoomVoicePanel status={status} variant="compact" />
+      </div>
+      {meeting && status === "connected" ? (
+        <>
+          <div className="flex flex-1 min-h-0 flex-col px-4 py-4">
+            <RtkChatMessagesUiPaginated
+              meeting={meeting}
+              className="flex-1 min-h-0"
+            />
+          </div>
+          <div className="border-t border-white/10 px-4 pb-4 pt-3">
+            <RtkChatComposerView
+              storageKey={`room-${roomId}-chat`}
+              inputTextPlaceholder="Message..."
+              canSendTextMessage={Boolean(
+                meeting.self?.permissions?.chatPublic?.canSend &&
+                  meeting.self?.permissions?.chatPublic?.text
+              )}
+              canSendFiles={Boolean(
+                meeting.self?.permissions?.chatPublic?.canSend &&
+                  meeting.self?.permissions?.chatPublic?.files
+              )}
+              maxLength={meeting.chat?.maxTextLimit ?? 1000}
+              rateLimits={
+                meeting.chat?.rateLimits ?? { period: 0, maxInvocations: 0 }
+              }
+              onNewMessage={(event) => {
+                meeting.chat?.sendMessage(event.detail, []);
+              }}
+            />
+          </div>
+          <div className="sr-only">
+            <RtkParticipantsAudio meeting={meeting} />
+            <RtkNotifications meeting={meeting} />
+            <RtkDialogManager meeting={meeting} />
+          </div>
+        </>
+      ) : (
+        <div className="flex flex-1 items-center border-t border-white/10 px-5 py-6 text-sm text-white/70">
+          Connecting to realtime meeting...
+        </div>
+      )}
     </div>
   );
 }

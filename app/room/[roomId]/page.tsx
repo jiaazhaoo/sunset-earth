@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
-import { ShareRoomLink } from "@/components/share-room-link";
-import { RealtimeSidebar } from "@/components/realtime-sidebar";
+import {
+  LiveChatCard,
+  RoomMembersCard,
+  RoomRealtimeProvider,
+} from "@/components/realtime-sidebar";
 import { getRoom } from "@/lib/rooms";
 import { getCameraById } from "@/lib/cameras";
 
@@ -60,61 +63,45 @@ export default async function RoomPage({
     : "Waiting to begin";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-50">
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-10 px-4 py-12 sm:px-6 lg:px-8">
-        <header className="rounded-3xl border border-white/10 bg-white/5 p-8 shadow-[0_30px_80px_rgba(0,0,0,0.45)] backdrop-blur">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.4em] text-orange-200">
-                Live Room
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-zinc-950 via-slate-950 to-zinc-950 text-zinc-50">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-28 right-[-6rem] h-72 w-72 rounded-full bg-orange-500/20 blur-[140px]" />
+        <div className="absolute bottom-[-8rem] left-[-4rem] h-96 w-96 rounded-full bg-amber-500/15 blur-[160px]" />
+        <div className="absolute left-1/2 top-20 h-px w-[70%] -translate-x-1/2 bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+      </div>
+
+      <main className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-4 py-12 sm:px-6 lg:px-10">
+        <RoomRealtimeProvider roomId={room.room_id}>
+          <section className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-[auto_auto]">
+            <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/8 via-white/4 to-transparent p-6 shadow-[0_20px_50px_rgba(0,0,0,0.35)] backdrop-blur lg:col-start-1 lg:row-start-1">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.4em] text-orange-200/90">
+                <span className="rounded-full border border-orange-200/30 bg-orange-400/5 px-3 py-1">
+                  Live Room
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/60">
+                  Synced stream
+                </span>
               </div>
-              <h1 className="text-4xl font-semibold text-white">
-                Watch the sunset together
+              <h1 className="mt-4 text-3xl font-semibold text-white sm:text-[40px]">
+                Sunset watch party
               </h1>
-              <p className="text-base text-white/70">
-                Stream is synced for everyone in this room. Send the link below to invite more friends on board.
+              <p className="mt-3 max-w-3xl text-sm text-white/65 sm:text-base">
+                Stream stays locked for everyone in this room. Share the invite, settle in, and watch the glow roll in together.
               </p>
+              <div className="mt-4 flex flex-wrap gap-3 text-sm text-white/70">
+                <span className="text-white/45">Now playing</span>
+                <span className="font-semibold text-white">
+                  {camera?.name ?? cameraId ?? "Pending"}
+                </span>
+                <span className="text-white/40">•</span>
+                <span className="text-white/45">Room started</span>
+                <span className="font-semibold text-white">
+                  {formattedStartTime}
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-5 shadow-inner shadow-black/20">
-              <dl className="grid gap-5 sm:grid-cols-3">
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-white/50">
-                    Room ID
-                  </dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">
-                    {room.room_id}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-white/50">
-                    Camera
-                  </dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">
-                    {camera?.name ?? cameraId ?? "Pending"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-white/50">
-                    Started
-                  </dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">
-                    {formattedStartTime}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-            <div className="rounded-2xl border border-white/5 bg-transparent p-1">
-              <ShareRoomLink shareUrl={shareUrl} />
-            </div>
-          </div>
-        </header>
-
-        <section className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <div className="flex flex-col gap-6">
-            <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/40 shadow-2xl shadow-black/40">
+            <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/50 shadow-2xl shadow-black/40 lg:col-start-1 lg:row-start-2">
               {camera?.embedUrl ? (
                 <iframe
                   key={camera.embedUrl}
@@ -122,7 +109,7 @@ export default async function RoomPage({
                   title={camera.name}
                   allow="autoplay; encrypted-media; fullscreen"
                   allowFullScreen
-                  className="aspect-video h-full w-full"
+                  className="aspect-video w-full"
                 />
               ) : (
                 <div className="flex aspect-video items-center justify-center text-sm text-white/60">
@@ -131,44 +118,15 @@ export default async function RoomPage({
               )}
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30 backdrop-blur">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.3em] text-orange-200">
-                    Room insights
-                  </p>
-                  <h2 className="text-2xl font-semibold text-white">Stay in sync</h2>
-                </div>
-                <span className="rounded-full border border-white/20 px-4 py-1 text-xs uppercase tracking-[0.35em] text-white/70">
-                  Beta
-                </span>
-              </div>
-              <dl className="mt-6 grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <dt className="text-xs uppercase tracking-[0.35em] text-white/60">
-                    Timezone
-                  </dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">
-                    {room.room_timezone ?? "Not specified"}
-                  </dd>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <dt className="text-xs uppercase tracking-[0.35em] text-white/60">
-                    Room type
-                  </dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">
-                    {room.room_type === "public" ? "Public session" : "Private invite"}
-                  </dd>
-                </div>
-              </dl>
-              <p className="mt-4 text-sm text-white/70">
-                Need better audio or presence syncing? The panel on the right now bundles realtime chat, voice, and participant lists powered by Cloudflare Realtime.
-              </p>
+            <div className="flex h-full flex-col rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl shadow-black/30 backdrop-blur lg:col-start-2 lg:row-start-1">
+              <RoomMembersCard variant="flat" shareUrl={shareUrl} />
             </div>
-          </div>
 
-          <RealtimeSidebar roomId={room.room_id} />
-        </section>
+            <div className="lg:col-start-2 lg:row-start-2">
+              <LiveChatCard />
+            </div>
+          </section>
+        </RoomRealtimeProvider>
       </main>
     </div>
   );
