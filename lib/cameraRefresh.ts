@@ -23,6 +23,12 @@ type MatchCandidate = {
 };
 
 export async function refreshCamera(camera: CameraRecord) {
+  // If current stream is explicitly embed-blocked, skip replacement attempts
+  const availability = await isCameraAvailable(camera);
+  if (!availability.available && availability.reason === "playability_blocked") {
+    return { updated: false, reason: "embed-blocked" as const };
+  }
+
   if (!camera.hostLink) {
     return { updated: false, reason: "missing-host" as const };
   }
