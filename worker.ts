@@ -1,0 +1,51 @@
+// Custom Worker entrypoint.
+//
+// OpenNext generates `.open-next/worker.js` (a fetch-only handler) at build
+// time. We re-export its `fetch` and add a `scheduled` handler so Cloudflare
+// Cron Triggers can drive the same API routes that Vercel Cron used to call.
+//
+// @ts-expect-error `.open-next/worker.js` only exists after `opennextjs-cloudflare build`
+import { default as handler } from "./.open-next/worker.js";
+
+// Map each cron expression (must match wrangler.jsonc triggers.crons) to the
+// internal API route it should invoke.
+const CRON_ROUTES: Record<string, string> = {
+  "0 * * * *": "/api/replace-link", // hourly: revalidate + replace broken links
+  "0 */3 * * *": "/api/weather-cache", // every 3h: refresh weather/sun caches
+  "*/5 * * * *": "/api/compute-rankings", // every 5min: recompute scores
+};
+
+export default {
+  fetch: handler.fetch,
+
+  async scheduled(
+    controller: ScheduledController,
+    env: CloudflareEnv,
+    ctx: ExecutionContext
+  ) {
+    const path = CRON_ROUTES[controller.cron];
+    if (!path) {
+      console.warn(`[cron] no route mapped for "${controller.cron}"`);
+      return;
+    }
+
+    const base = env.SITE_URL ?? "https://localhost";
+    const request = new Request(`${base}${path}`, {
+      headers: env.CRON_SECRET
+        ? { Authorization: `Bearer ${env.CRON_SECRET}` }
+        : {},
+    });
+
+    // Route the cron in-process through the same OpenNext fetch handler.
+    ctx.waitUntil(
+      handler
+        .fetch(request, env, ctx)
+        .then((res: Response) =>
+          console.log(`[cron] ${controller.cron} -> ${path} : ${res.status}`)
+        )
+        .catch((err: unknown) =>
+          console.error(`[cron] ${controller.cron} -> ${path} failed`, err)
+        )
+    );
+  },
+} satisfies ExportedHandler<CloudflareEnv>;

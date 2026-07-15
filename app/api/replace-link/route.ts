@@ -92,23 +92,13 @@ export async function GET(request: NextRequest) {
 
     // Trigger next task in chain: weather-cache
     try {
-      const baseUrl = request.nextUrl.origin;
+      const baseUrl = process.env.SITE_URL ?? request.nextUrl.origin;
       console.log("[replace-link] triggering weather-cache...");
-      const weatherUrl = buildBypassUrl(
-        `${baseUrl}/api/weather-cache`,
-        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
-      );
-      const weatherHeaders: Record<string, string> = {
-        Authorization: `Bearer ${process.env.CRON_SECRET}`,
-      };
-      const bypassHeader = buildBypassHeader(
-        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
-      );
-      if (bypassHeader) {
-        weatherHeaders["x-vercel-protection-bypass"] = bypassHeader;
-      }
+      const weatherUrl = `${baseUrl}/api/weather-cache`;
       const weatherResponse = await fetch(weatherUrl, {
-        headers: weatherHeaders,
+        headers: {
+          Authorization: `Bearer ${process.env.CRON_SECRET ?? ""}`,
+        },
       });
 
       if (!weatherResponse.ok) {
@@ -140,21 +130,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function buildBypassUrl(url: string, bypassSecret?: string) {
-  if (!bypassSecret) {
-    return url;
-  }
-  const parsed = new URL(url);
-  parsed.searchParams.set("x-vercel-set-bypass-cookie", "true");
-  parsed.searchParams.set("x-vercel-protection-bypass", bypassSecret);
-  return parsed.toString();
-}
-
-function buildBypassHeader(bypassSecret?: string) {
-  if (!bypassSecret) {
-    return null;
-  }
-  return bypassSecret;
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listCameras } from "@/lib/cameras";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 async function fetchAllCameras(batchSize = 200) {
   const cameras: Awaited<ReturnType<typeof listCameras>> = [];

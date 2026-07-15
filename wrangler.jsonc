@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sunset-earth",
+  "main": "worker.ts",
+  "compatibility_date": "2025-03-25",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets"
+  },
+  "observability": {
+    "enabled": true
+  },
+  // Heavy cron routes iterate every camera; raise the CPU ceiling to match the
+  // former Vercel maxDuration=300. Requires a paid Workers plan (free is capped).
+  "limits": {
+    "cpu_ms": 300000
+  },
+  // Cloudflare Cron Triggers. The schedules must exactly match the keys in
+  // worker.ts CRON_ROUTES so the scheduled() handler can dispatch them.
+  "triggers": {
+    "crons": [
+      "0 * * * *",
+      "0 */3 * * *",
+      "*/5 * * * *"
+    ]
+  },
+  "vars": {
+    // Non-secret defaults. Set SITE_URL to the deployed URL. Secrets
+    // (SUPABASE_*, CRON_SECRET, realtime keys) go in via `wrangler secret put`.
+    "SITE_URL": "https://sunset-earth.workers.dev"
+  }
+}

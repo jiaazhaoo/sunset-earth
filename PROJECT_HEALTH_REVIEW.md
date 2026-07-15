@@ -90,3 +90,28 @@
 1. **P0 全修** → 让项目能干净地 build & deploy(1、2、3、4)。
 2. **P1 清债** → 删死文件、归档脚本、清 lint、收敛到 v2 算法(5、6、7)。
 3. **P2 校准** → 同步文档、决定 ML 特性去留、过一遍依赖(8、9、10)。
+
+---
+
+## 🔄 重启更新(2026-07-15)— 迁移到 Cloudflare Workers
+
+用户决定改用 **Cloudflare Workers** 部署,不再用 Vercel。本轮完成:
+
+### 已完成
+- **删除 ML pool 系统**(问题 8):`lib/ml-pool-assignment.ts` 靠 `child_process` 跑 Python,Cloudflare Workers 根本不支持。整套删除(pool 库、dev/pools 页、camera-pools API、`data/` 模型文件、python 训练脚本、docs/ml-training),用户主流程零影响。
+- **拆除 Vercel 专属代码**(问题 1 部分):移除 `@vercel/speed-insights`、删 `vercel.json`、清掉 `camera-availability`/`replace-link` 里的 `VERCEL_AUTOMATION_BYPASS_SECRET` 与 `x-vercel-protection-bypass` 逻辑,内部自调用改用 `SITE_URL`。
+- **修复 P0 构建**(问题 1、2、3):`/all-cameras` 改 `force-dynamic`(不再 build 期拉数据);`supabaseAdmin` 改惰性 Proxy 初始化(build 期不再硬崩,也适配 Workers 的 per-request env);补齐 `.env.example`。
+- **接入 OpenNext + Cloudflare**(问题 4 替代方案):`@opennextjs/cloudflare` + `wrangler`;新增 `wrangler.jsonc`、`open-next.config.ts`、自定义 `worker.ts`(`fetch` + `scheduled`);`package.json` 加 `preview`/`deploy`/`cf-typegen`。
+- **cron 重写为 Cloudflare Cron Triggers**(问题 4、9):`worker.ts` 的 `scheduled()` 按 `event.cron` 分发到 replace-link / weather-cache / compute-rankings。
+- **文档同步**(问题 9):README / PROJECT_ORIENTATION / docs/INDEX 全部更新(部署、环境变量正名为 `SUPABASE_URL`+`SUPABASE_SERVICE_ROLE_KEY`、cron、去掉 ML 描述)。
+- **类型隔离**:workerd 运行时类型限定在 `tsconfig.worker.json`(仅 `worker.ts`),app 保持 Web 标准类型。
+
+### 验证
+- `tsc --noEmit`(app)✅ · `tsc -p tsconfig.worker.json`(worker)✅
+- `opennextjs-cloudflare build` ✅ · `wrangler deploy --dry-run` ✅(115 静态资源、bindings 正确、gzip 2.26MB 在限额内)
+
+### 部署前仍需人工处理
+- **Cloudflare 账号侧**:`wrangler login`;用 `wrangler secret put` 设置 `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `CRON_SECRET`(及可选 realtime/voice 秘钥);把 `wrangler.jsonc` 里的 `SITE_URL` 改成真实部署域名。
+- **需要付费 Workers 套餐**:`limits.cpu_ms=300000`(重 cron 遍历所有相机)和 Cron Triggers 都要求 paid plan。
+- **次要功能待办**:`lib/daily.ts`、`lib/cloudflareRealtime.ts` 在模块顶层读 `process.env`,Cloudflare Workers 里可能读不到(secrets 仅请求时注入)。若启用 rooms/voice,需把这两处改成函数内惰性读取。
+- **未处理的历史技术债**:45 个 ESLint error 中一部分已随删文件消失,剩余的(`any`、未使用变量、脚本 `require()`)未清;新旧打分器 `client-ranking` vs `v2` 仍并存(dev 工具用 v1)。这些不阻塞部署,留作后续。
