@@ -8,13 +8,15 @@
     "binding": "ASSETS",
     "directory": ".open-next/assets"
   },
-  // Create with: npx wrangler d1 create sunset-earth
-  // then paste the returned database_id below.
+  // Created with: npx wrangler d1 create sunset-earth
+  // The binding MUST stay "DB" — lib/db.ts reads env.DB. If `wrangler d1 create`
+  // offers to add a binding for you, decline it or delete the entry it appends,
+  // since it names the binding after the database instead.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "sunset-earth",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+      "database_id": "d270a188-ef17-4392-991e-b78d567b55f3"
     }
   ],
   "observability": {
@@ -35,8 +37,8 @@
     ]
   },
   "vars": {
-    // Non-secret defaults. Set SITE_URL to the deployed URL. Secrets
-    // (SUPABASE_*, CRON_SECRET, realtime keys) go in via `wrangler secret put`.
+    // Non-secret defaults. Set SITE_URL to the deployed URL after the first
+    // deploy. CRON_SECRET is a secret: `wrangler secret put CRON_SECRET`.
     "SITE_URL": "https://sunset-earth.workers.dev"
   }
 }
