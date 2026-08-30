@@ -506,9 +506,6 @@ function CameraActions({
   onSwitchClick: () => void;
   layout?: "stacked" | "inline";
 }) {
-  const [creating, setCreating] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-
   const containerClasses =
     layout === "inline"
       ? "flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end"
@@ -516,65 +513,8 @@ function CameraActions({
   const primaryButtonClasses = `${
     layout === "inline" ? "w-full px-5 py-2.5 sm:w-auto" : "w-full px-6 py-3"
   } group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 text-sm font-semibold text-white shadow-lg shadow-orange-500/25 transition-all hover:shadow-xl hover:shadow-orange-500/40 disabled:cursor-not-allowed disabled:from-zinc-300 disabled:to-zinc-400 disabled:shadow-none dark:from-orange-600 dark:to-rose-600 dark:shadow-orange-600/20 dark:hover:shadow-orange-600/30 dark:disabled:from-zinc-700 dark:disabled:to-zinc-600`;
-  const secondaryButtonClasses = `${
-    layout === "inline" ? "w-full px-5 py-2.5 sm:w-auto" : "w-full px-6 py-3"
-  } group flex items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white text-sm font-semibold text-zinc-700 shadow-sm transition-all hover:border-zinc-300 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400 disabled:hover:bg-white dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-600 dark:disabled:border-zinc-700 dark:disabled:text-zinc-600 dark:disabled:hover:bg-zinc-700`;
-  const errorClasses = `${
-    layout === "inline" ? "text-right" : ""
-  } rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600 dark:bg-red-950/30 dark:text-red-400`;
-
-  const handleCreateRoom = async () => {
-    if (!cameraId) {
-      setActionError("No camera available right now.");
-      return;
-    }
-
-    setCreating(true);
-    setActionError(null);
-    try {
-      const response = await fetch("/api/create-room", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cameraId }),
-      });
-
-      if (!response.ok) {
-        throw new Error("failed");
-      }
-
-      const data = (await response.json()) as { roomId: string };
-      window.location.href = `/room/${data.roomId}?camera=${cameraId}`;
-    } catch {
-      setActionError("Failed to create a room. Please try again later.");
-    } finally {
-      setCreating(false);
-    }
-  };
-
   return (
     <div className={containerClasses}>
-      <button
-        onClick={handleCreateRoom}
-        disabled={!cameraId || creating}
-        className={secondaryButtonClasses}
-      >
-        {creating ? (
-          <>
-            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Creating room…
-          </>
-        ) : (
-          <>
-            <svg className="h-4 w-4 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-            Watch with friends
-          </>
-        )}
-      </button>
       <button
         onClick={onSwitchClick}
         disabled={loading}
@@ -600,11 +540,6 @@ function CameraActions({
         </span>
         <div className="absolute inset-0 -z-0 bg-gradient-to-r from-orange-600 to-rose-600 opacity-0 transition-opacity group-hover:opacity-100 dark:from-orange-700 dark:to-rose-700"></div>
       </button>
-      {actionError && (
-        <p className={errorClasses} role="alert">
-          {actionError}
-        </p>
-      )}
     </div>
   );
 }

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { listCameras } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { cleanupEmptyRooms } from "@/lib/roomCleanup";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -89,12 +88,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const roomsCleanup = await cleanupEmptyRooms();
-
-    return NextResponse.json({
-      ...summary,
-      roomsCleanup,
-    });
+    return NextResponse.json(summary);
   } catch (error) {
     console.error("[refresh-links]", error);
     return NextResponse.json(
