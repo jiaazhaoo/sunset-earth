@@ -1,41 +1,84 @@
 #!/usr/bin/env node
-// Converts a camera_ytb CSV export (e.g. from the Supabase table editor) into
-// SQL that D1 can execute.
+// Converts a Supabase/Postgres CSV export into SQL that D1 (SQLite) can execute.
 //
-//   node d1/csv-to-sql.mjs path/to/camera_ytb.csv > d1/seed.sql
-//   npx wrangler d1 execute sunset-earth --remote --file=d1/seed.sql
+//   node d1/csv-to-sql.mjs camera_ytb path/to/camera_ytb_rows.csv > d1/seed-cameras.sql
+//   npx wrangler d1 execute sunset-earth --remote --file=d1/seed-cameras.sql
 //
-// The CSV must have a header row. Only columns that exist in camera_ytb are
-// used; unknown columns are ignored and missing ones become NULL.
+// Three conversions matter, because SQLite has none of these Postgres types:
+//   * boolean      "true"/"false"                -> 1/0
+//   * timestamptz  "2026-03-11 07:11:58.946+00"  -> "2026-03-11T07:11:58.946Z"
+//   * jsonb                                      -> TEXT (passed through verbatim)
+//
+// The timestamp rewrite is not cosmetic: the app compares these values as
+// strings, and a space sorts before "T", so mixing the two formats would break
+// every freshness filter.
 
 import { readFileSync } from "node:fs";
 
-const COLUMNS = [
-  "camera_id",
-  "link",
-  "placename",
-  "city",
-  "country",
-  "latitude",
-  "longitude",
-  "timezone",
-  "info_0",
-  "tag",
-  "host_link",
-  "ytb_title",
-  "link_available",
-  "sunset_delay",
-  "sunrise_advance",
-  "last_check",
-  "camera_metadata",
-];
+const TEXT = "text";
+const NUMBER = "number";
+const BOOL = "bool";
+const TIMESTAMP = "timestamp";
 
-const NUMERIC = new Set([
-  "latitude",
-  "longitude",
-  "sunset_delay",
-  "sunrise_advance",
-]);
+/**
+ * Target tables. Columns absent from the CSV become NULL; columns present in
+ * the CSV but missing here are ignored (the legacy camera_ytb export carries
+ * active/des_0/des_1, which are empty in every row and unused by the app).
+ */
+const TABLES = {
+  camera_ytb: {
+    conflictKey: "camera_id",
+    columns: {
+      camera_id: TEXT,
+      link: TEXT,
+      placename: TEXT,
+      city: TEXT,
+      country: TEXT,
+      latitude: NUMBER,
+      longitude: NUMBER,
+      timezone: TEXT,
+      info_0: TEXT,
+      tag: TEXT,
+      host_link: TEXT,
+      ytb_title: TEXT,
+      link_available: BOOL,
+      sunset_delay: NUMBER,
+      sunrise_advance: NUMBER,
+      last_check: TIMESTAMP,
+      camera_metadata: TEXT, // JSON document, stored verbatim
+    },
+  },
+  camera_rankings: {
+    conflictKey: "camera_id",
+    columns: {
+      camera_id: TEXT,
+      score: NUMBER,
+      label: TEXT,
+      distance_minutes: NUMBER,
+      is_clear: BOOL,
+      weather_class: TEXT,
+      timezone: TEXT,
+      sunrise: TIMESTAMP,
+      sunset: TIMESTAMP,
+      next_event_type: TEXT,
+      next_event_time: TIMESTAMP,
+      following_event_type: TEXT,
+      following_event_time: TIMESTAMP,
+      available: BOOL,
+      computed_at: TIMESTAMP,
+    },
+  },
+  camera_weather_cache: {
+    conflictKey: "camera_id",
+    columns: {
+      camera_id: TEXT,
+      lat: NUMBER,
+      lng: NUMBER,
+      data: TEXT, // JSON document, stored verbatim
+      fetched_at: TIMESTAMP,
+    },
+  },
+};
 
 /** Minimal RFC-4180 CSV parser (handles quotes, escaped quotes, embedded newlines). */
 function parseCsv(text) {
@@ -88,32 +131,56 @@ function sqlString(value) {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-function toSqlValue(column, raw) {
+function toSqlValue(kind, raw, context) {
   const value = raw?.trim() ?? "";
 
   if (value === "" || value.toLowerCase() === "null") {
     return "NULL";
   }
 
-  if (column === "link_available") {
-    const truthy = ["true", "t", "1", "yes"].includes(value.toLowerCase());
-    return truthy ? "1" : "0";
+  if (kind === BOOL) {
+    return ["true", "t", "1", "yes"].includes(value.toLowerCase()) ? "1" : "0";
   }
 
-  if (NUMERIC.has(column)) {
+  if (kind === NUMBER) {
     const num = Number.parseFloat(value);
-    return Number.isNaN(num) ? "NULL" : String(num);
+    if (Number.isNaN(num)) {
+      warn(`${context}: not a number (${JSON.stringify(value)}) -> NULL`);
+      return "NULL";
+    }
+    return String(num);
   }
 
-  // Everything else (including camera_metadata JSON) is stored as TEXT.
+  if (kind === TIMESTAMP) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      warn(`${context}: unparseable timestamp (${JSON.stringify(value)}) -> NULL`);
+      return "NULL";
+    }
+    // Normalize every date to the ISO-8601 UTC form the app compares against.
+    return sqlString(parsed.toISOString());
+  }
+
   return sqlString(value);
 }
 
-const file = process.argv[2];
-if (!file) {
-  console.error("usage: node d1/csv-to-sql.mjs <camera_ytb.csv> > d1/seed.sql");
+const warnings = [];
+function warn(message) {
+  warnings.push(message);
+}
+
+// --- main ----------------------------------------------------------------
+
+const [tableName, file] = process.argv.slice(2);
+
+if (!tableName || !file || !TABLES[tableName]) {
+  console.error("usage: node d1/csv-to-sql.mjs <table> <export.csv> > seed.sql");
+  console.error(`tables: ${Object.keys(TABLES).join(", ")}`);
   process.exit(1);
 }
+
+const table = TABLES[tableName];
+const columns = Object.keys(table.columns);
 
 const rows = parseCsv(readFileSync(file, "utf8"));
 if (rows.length < 2) {
@@ -124,30 +191,36 @@ if (rows.length < 2) {
 const header = rows[0].map((h) => h.trim().replace(/^﻿/, ""));
 const indexOf = new Map(header.map((name, i) => [name, i]));
 
-const unknown = header.filter((h) => h && !COLUMNS.includes(h));
-if (unknown.length) {
-  console.error(`note: ignoring unknown columns: ${unknown.join(", ")}`);
-}
-if (!indexOf.has("camera_id")) {
-  console.error("error: CSV has no camera_id column");
+const ignored = header.filter((h) => h && !columns.includes(h));
+const missing = columns.filter((c) => !indexOf.has(c));
+
+if (!indexOf.has(table.conflictKey)) {
+  console.error(`error: CSV has no ${table.conflictKey} column`);
   process.exit(1);
 }
 
-console.log("-- Generated by d1/csv-to-sql.mjs. Safe to re-run: existing rows are replaced.");
+console.log(`-- ${tableName}: generated by d1/csv-to-sql.mjs from ${file}`);
+console.log("-- Re-runnable: existing rows with the same key are replaced.");
 console.log("BEGIN TRANSACTION;");
 
 let count = 0;
-for (const row of rows.slice(1)) {
-  const values = COLUMNS.map((column) => {
+for (const [i, row] of rows.slice(1).entries()) {
+  const values = columns.map((column) => {
     const index = indexOf.get(column);
-    return index === undefined ? "NULL" : toSqlValue(column, row[index]);
+    if (index === undefined) return "NULL";
+    return toSqlValue(table.columns[column], row[index], `row ${i + 2}.${column}`);
   });
 
   console.log(
-    `INSERT OR REPLACE INTO camera_ytb (${COLUMNS.join(", ")}) VALUES (${values.join(", ")});`
+    `INSERT OR REPLACE INTO ${tableName} (${columns.join(", ")}) VALUES (${values.join(", ")});`
   );
   count++;
 }
 
 console.log("COMMIT;");
-console.error(`ok: generated ${count} rows`);
+
+console.error(`ok: ${count} rows -> ${tableName}`);
+if (ignored.length) console.error(`   ignored CSV columns: ${ignored.join(", ")}`);
+if (missing.length) console.error(`   columns not in CSV (NULL): ${missing.join(", ")}`);
+for (const message of warnings.slice(0, 20)) console.error(`   warn: ${message}`);
+if (warnings.length > 20) console.error(`   ... and ${warnings.length - 20} more warnings`);

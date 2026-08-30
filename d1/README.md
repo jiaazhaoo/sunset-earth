@@ -29,24 +29,44 @@ npx wrangler d1 execute sunset-earth --remote --file=d1/schema.sql
 
 ## Importing the camera data
 
-`camera_ytb` is the one table that must be carried over. Export it from the old
-Supabase project, then load it here.
-
-**If you have a CSV export** (columns must match `camera_ytb` in `d1/schema.sql`):
+`camera_ytb` is the one table that must be carried over. The 156 cameras
+exported from the old Supabase project are already committed as
+[`seed-cameras.sql`](seed-cameras.sql):
 
 ```bash
-node d1/csv-to-sql.mjs path/to/camera_ytb.csv > d1/seed.sql
-npx wrangler d1 execute sunset-earth --remote --file=d1/seed.sql
+npx wrangler d1 execute sunset-earth --remote --file=d1/seed-cameras.sql
 ```
 
-**If you have a Postgres `INSERT` dump**, it usually needs two tweaks before it
-will run against SQLite:
+`camera_rankings` and `camera_weather_cache` are deliberately **not** seeded —
+the exported rows are months old and would fail the freshness filters anyway.
+The cron jobs rebuild both.
 
-- `true` / `false` → `1` / `0` (for `link_available`)
-- `NOW()` → an ISO string, e.g. `'2026-01-01T00:00:00.000Z'`
+### ⚠️ Every imported camera starts as unavailable
 
-**As a last resort**, `scripts/insert_cameras.sql` contains 41 cameras
-(ids 132–172) and can be adapted as seed data.
+In the export, all 156 rows have `link_available = false`, with the last
+availability check dated 2026-03-11. Straight after importing, the site has
+nothing to show. Re-validate the links before expecting the homepage to work:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<your-worker>/api/refresh-links
+```
+
+`refresh-links` re-checks every stream and restores `link_available` for the
+ones still live; `replace-link` then tries to repair the rest by crawling each
+camera's `host_link` channel for a current stream. Expect some cameras to stay
+dead — YouTube live streams do not survive months of neglect.
+
+### Re-generating the seed from a fresh export
+
+```bash
+node d1/csv-to-sql.mjs camera_ytb path/to/camera_ytb_rows.csv > d1/seed-cameras.sql
+```
+
+The converter also handles `camera_rankings` and `camera_weather_cache`. It
+normalizes Postgres values that SQLite has no type for: `true`/`false` → `1`/`0`,
+and `2026-03-11 07:11:58.946+00` → `2026-03-11T07:11:58.946Z`. That timestamp
+rewrite matters — the app compares dates as strings, and a space sorts before
+`T`, so mixing the two formats would silently break every freshness filter.
 
 ## Verifying
 
@@ -55,9 +75,12 @@ npx wrangler d1 execute sunset-earth --remote \
   --command "SELECT COUNT(*) AS cameras, SUM(link_available) AS available FROM camera_ytb"
 ```
 
-Then trigger the pipeline and check it populated rankings:
+A fresh import reports `cameras = 156, available = 0`; see the warning above.
+
+Then run the pipeline in order and check it populated rankings:
 
 ```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<your-worker>/api/refresh-links
 curl -H "Authorization: Bearer $CRON_SECRET" https://<your-worker>/api/weather-cache
 curl -H "Authorization: Bearer $CRON_SECRET" https://<your-worker>/api/compute-rankings
 curl https://<your-worker>/api/rankings-health
