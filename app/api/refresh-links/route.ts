@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listCameras } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { execute } from "@/lib/db";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -45,17 +45,20 @@ export async function GET(request: NextRequest) {
           const checkedAt = new Date().toISOString();
           const availability = await isCameraAvailable(camera);
           if (availability.available) {
-            const updates: Record<string, unknown> = {
-              last_check: checkedAt,
-            };
-            if (!camera.linkAvailable) {
-              updates.link_available = true;
+            // Restore the link_available flag only when it was previously false.
+            if (camera.linkAvailable) {
+              await execute(
+                `UPDATE camera_ytb SET last_check = ? WHERE camera_id = ?`,
+                checkedAt,
+                camera.id
+              );
+            } else {
+              await execute(
+                `UPDATE camera_ytb SET last_check = ?, link_available = 1 WHERE camera_id = ?`,
+                checkedAt,
+                camera.id
+              );
             }
-
-            await supabaseAdmin
-              .from("camera_ytb")
-              .update(updates)
-              .eq("camera_id", camera.id);
 
             if (!camera.linkAvailable) {
               summary.markedAvailable++;
@@ -99,15 +102,9 @@ export async function GET(request: NextRequest) {
 }
 
 async function markUnavailable(cameraId: string, checkedAt: string) {
-  const { error } = await supabaseAdmin
-    .from("camera_ytb")
-    .update({
-      link_available: false,
-      last_check: checkedAt,
-    })
-    .eq("camera_id", cameraId);
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  await execute(
+    `UPDATE camera_ytb SET link_available = 0, last_check = ? WHERE camera_id = ?`,
+    checkedAt,
+    cameraId
+  );
 }

@@ -1,5 +1,5 @@
 import { getCameraById, type CameraRecord } from "@/lib/cameras";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { execute, nowIso } from "@/lib/db";
 import { isCameraAvailable } from "@/lib/availability";
 import {
   calculateSimilarity,
@@ -101,19 +101,15 @@ export async function refreshCamera(camera: CameraRecord) {
     if (match) {
       const newLink = `https://www.youtube.com/watch?v=${match.videoId}`;
 
-      const { error } = await supabaseAdmin
-        .from("camera_ytb")
-        .update({
-          link: newLink,
-          ytb_title: match.title,
-          link_available: true,
-          last_check: new Date().toISOString(),
-        })
-        .eq("camera_id", camera.id);
-
-      if (error) {
-        throw new Error(error.message);
-      }
+      await execute(
+        `UPDATE camera_ytb
+         SET link = ?, ytb_title = ?, link_available = 1, last_check = ?
+         WHERE camera_id = ?`,
+        newLink,
+        match.title,
+        nowIso(),
+        camera.id
+      );
 
       const updatedCamera = await getCameraById(camera.id);
       console.log(`[refreshCamera] ${camera.id} matched with ${threshold.type} (${match.similarity.toFixed(3)})`);

@@ -1,9 +1,9 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { execute, queryOne, nowIso } from "@/lib/db";
 
 const TASK_LOCKS_TABLE = "task_locks";
 
 export type TaskLockResult =
-  | { success: true }
+  | { success: true; token: string }
   | { success: false; reason: "locked" | "error"; lockedBy?: string };
 
 /**
@@ -16,47 +16,49 @@ export async function acquireTaskLock(
   lockedBy?: string
 ): Promise<TaskLockResult> {
   try {
-    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    const now = nowIso();
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+    const token = crypto.randomUUID();
 
     // First, clean up any expired locks
-    await supabaseAdmin
-      .from(TASK_LOCKS_TABLE)
-      .delete()
-      .lt("expires_at", new Date().toISOString());
+    await execute(
+      `DELETE FROM ${TASK_LOCKS_TABLE} WHERE expires_at < ?`,
+      now
+    );
 
-    // Try to insert a new lock
-    const { error } = await supabaseAdmin
-      .from(TASK_LOCKS_TABLE)
-      .insert({
-        task_name: taskName,
-        locked_at: new Date().toISOString(),
-        locked_by: lockedBy ?? null,
-        expires_at: expiresAt.toISOString(),
-      })
-      .select()
-      .single();
+    // Try to take the lock. ON CONFLICT DO NOTHING makes this atomic: either
+    // this statement inserts our row or it changes nothing because someone
+    // else holds the lock. (Replaces the old Postgres 23505 error check.)
+    await execute(
+      `INSERT INTO ${TASK_LOCKS_TABLE} (task_name, locked_at, locked_by, lock_token, expires_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(task_name) DO NOTHING`,
+      taskName,
+      now,
+      lockedBy ?? null,
+      token,
+      expiresAt
+    );
 
-    if (error) {
-      // Check if it's a unique constraint violation (task already locked)
-      if (error.code === "23505") {
-        // Query who holds the lock
-        const { data: existingLock } = await supabaseAdmin
-          .from(TASK_LOCKS_TABLE)
-          .select("locked_by")
-          .eq("task_name", taskName)
-          .single();
+    // Confirm ownership by reading the token back rather than trusting a
+    // rows-changed count: if the stored token is ours, the insert above won.
+    const existing = await queryOne<{
+      locked_by: string | null;
+      lock_token: string;
+    }>(
+      `SELECT locked_by, lock_token FROM ${TASK_LOCKS_TABLE} WHERE task_name = ?`,
+      taskName
+    );
 
-        return {
-          success: false,
-          reason: "locked",
-          lockedBy: existingLock?.locked_by ?? undefined,
-        };
-      }
-      console.error("[task-lock] acquire error:", error);
-      return { success: false, reason: "error" };
+    if (existing?.lock_token === token) {
+      return { success: true, token };
     }
 
-    return { success: true };
+    return {
+      success: false,
+      reason: "locked",
+      lockedBy: existing?.locked_by ?? undefined,
+    };
   } catch (error) {
     console.error("[task-lock] acquire exception:", error);
     return { success: false, reason: "error" };
@@ -65,13 +67,27 @@ export async function acquireTaskLock(
 
 /**
  * Releases a task lock.
+ *
+ * Pass the token returned by acquireTaskLock so a run whose TTL already expired
+ * cannot delete a lock that another run has since taken.
  */
-export async function releaseTaskLock(taskName: string): Promise<void> {
+export async function releaseTaskLock(
+  taskName: string,
+  token?: string
+): Promise<void> {
   try {
-    await supabaseAdmin
-      .from(TASK_LOCKS_TABLE)
-      .delete()
-      .eq("task_name", taskName);
+    if (token) {
+      await execute(
+        `DELETE FROM ${TASK_LOCKS_TABLE} WHERE task_name = ? AND lock_token = ?`,
+        taskName,
+        token
+      );
+    } else {
+      await execute(
+        `DELETE FROM ${TASK_LOCKS_TABLE} WHERE task_name = ?`,
+        taskName
+      );
+    }
   } catch (error) {
     console.error("[task-lock] release error:", error);
   }
@@ -83,23 +99,17 @@ export async function releaseTaskLock(taskName: string): Promise<void> {
 export async function isTaskLocked(taskName: string): Promise<boolean> {
   try {
     // Clean up expired locks first
-    await supabaseAdmin
-      .from(TASK_LOCKS_TABLE)
-      .delete()
-      .lt("expires_at", new Date().toISOString());
+    await execute(
+      `DELETE FROM ${TASK_LOCKS_TABLE} WHERE expires_at < ?`,
+      nowIso()
+    );
 
-    const { data, error } = await supabaseAdmin
-      .from(TASK_LOCKS_TABLE)
-      .select("task_name")
-      .eq("task_name", taskName)
-      .maybeSingle();
+    const row = await queryOne<{ task_name: string }>(
+      `SELECT task_name FROM ${TASK_LOCKS_TABLE} WHERE task_name = ?`,
+      taskName
+    );
 
-    if (error) {
-      console.error("[task-lock] check error:", error);
-      return false;
-    }
-
-    return data !== null;
+    return row !== null;
   } catch (error) {
     console.error("[task-lock] check exception:", error);
     return false;
@@ -139,6 +149,6 @@ export async function withTaskLock<T>(
     const result = await fn();
     return { success: true, result };
   } finally {
-    await releaseTaskLock(taskName);
+    await releaseTaskLock(taskName, lockResult.token);
   }
 }

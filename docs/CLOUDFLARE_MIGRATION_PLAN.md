@@ -1,7 +1,10 @@
 # 全面迁移到 Cloudflare — 脱离 Supabase 改造清单
 
 > 目标:**完全脱离 Supabase 与 Vercel**,数据与运行时全部落在 Cloudflare。
-> 状态:Vercel 已脱离 ✅ · 聊天室已移除 ✅ · Supabase 待迁移 ⬜
+> 状态:Vercel 已脱离 ✅ · 聊天室已移除 ✅ · **Supabase 代码层已迁移完成 ✅**
+>
+> ⚠️ **剩余人工步骤**:创建 D1 数据库、填 `database_id`、导入 `camera_ytb` 数据。
+> 具体命令见 [`d1/README.md`](../d1/README.md)。下文保留为迁移决策记录。
 
 ---
 

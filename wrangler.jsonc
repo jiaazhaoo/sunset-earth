@@ -8,6 +8,15 @@
     "binding": "ASSETS",
     "directory": ".open-next/assets"
   },
+  // Create with: npx wrangler d1 create sunset-earth
+  // then paste the returned database_id below.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sunset-earth",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
   "observability": {
     "enabled": true
   },

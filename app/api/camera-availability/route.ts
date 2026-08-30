@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { execute, fromBool, nowIso } from "@/lib/db";
 
 async function triggerReplaceLink(origin: string, cronSecret?: string) {
   const baseUrl = process.env.SITE_URL ?? origin;
@@ -24,17 +24,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { error } = await supabaseAdmin
-      .from("camera_ytb")
-      .update({
-        link_available: available,
-        last_check: new Date().toISOString(),
-      })
-      .eq("camera_id", cameraId);
-
-    if (error) {
-      throw new Error(error.message);
-    }
+    await execute(
+      `UPDATE camera_ytb SET link_available = ?, last_check = ? WHERE camera_id = ?`,
+      fromBool(available),
+      nowIso(),
+      cameraId
+    );
 
     // If marked unavailable, trigger link replacement chain in background
     if (!available) {

@@ -1,50 +1,46 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { queryOne } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    // Get latest camera check time
-    const { data: latestCamera } = await supabaseAdmin
-      .from("camera_ytb")
-      .select("last_check")
-      .order("last_check", { ascending: false })
-      .limit(1)
-      .single();
+    // Aggregate in SQL rather than fetching every row to count it.
+    const cameraStats = await queryOne<{
+      latest_check: string | null;
+      total: number | null;
+      available: number | null;
+    }>(
+      `SELECT
+         MAX(last_check) AS latest_check,
+         COUNT(*) AS total,
+         SUM(CASE WHEN link_available != 0 THEN 1 ELSE 0 END) AS available
+       FROM camera_ytb`
+    );
 
-    // Get latest ranking computation time
-    const { data: latestRanking } = await supabaseAdmin
-      .from("camera_rankings")
-      .select("computed_at")
-      .order("computed_at", { ascending: false })
-      .limit(1)
-      .single();
+    const rankingStats = await queryOne<{
+      latest_computed_at: string | null;
+      total: number | null;
+      available: number | null;
+    }>(
+      `SELECT
+         MAX(computed_at) AS latest_computed_at,
+         COUNT(*) AS total,
+         SUM(CASE WHEN available = 1 THEN 1 ELSE 0 END) AS available
+       FROM camera_rankings`
+    );
 
-    // Get camera stats
-    const { data: cameraStats } = await supabaseAdmin
-      .from("camera_ytb")
-      .select("link_available");
-
-    const totalCameras = cameraStats?.length ?? 0;
-    const availableCameras =
-      cameraStats?.filter((c) => c.link_available !== false).length ?? 0;
-
-    // Get ranking stats
-    const { data: rankingStats } = await supabaseAdmin
-      .from("camera_rankings")
-      .select("available, score");
-
-    const rankedCameras = rankingStats?.length ?? 0;
-    const availableRanked =
-      rankingStats?.filter((r) => r.available).length ?? 0;
+    const totalCameras = cameraStats?.total ?? 0;
+    const availableCameras = cameraStats?.available ?? 0;
+    const rankedCameras = rankingStats?.total ?? 0;
+    const availableRanked = rankingStats?.available ?? 0;
 
     const now = new Date();
-    const lastCameraCheck = latestCamera?.last_check
-      ? new Date(latestCamera.last_check)
+    const lastCameraCheck = cameraStats?.latest_check
+      ? new Date(cameraStats.latest_check)
       : null;
-    const lastRankingCompute = latestRanking?.computed_at
-      ? new Date(latestRanking.computed_at)
+    const lastRankingCompute = rankingStats?.latest_computed_at
+      ? new Date(rankingStats.latest_computed_at)
       : null;
 
     // Calculate time since last run
@@ -85,7 +81,10 @@ export async function GET() {
         total: totalCameras,
         available: availableCameras,
         unavailable: totalCameras - availableCameras,
-        availabilityRate: `${((availableCameras / totalCameras) * 100).toFixed(1)}%`,
+        availabilityRate:
+          totalCameras > 0
+            ? `${((availableCameras / totalCameras) * 100).toFixed(1)}%`
+            : "n/a",
       },
       rankings: {
         total: rankedCameras,

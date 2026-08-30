@@ -3,7 +3,7 @@ import { listCameras } from "@/lib/cameras";
 import { getCachedWeatherSnapshot } from "@/lib/weather";
 import { scoreCameraWeather } from "@/lib/client-ranking-v2";
 import { isCameraAvailable } from "@/lib/availability";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { execute, fromBool } from "@/lib/db";
 import { isTaskLocked, withTaskLock } from "@/lib/task-lock";
 
 export const maxDuration = 300;
@@ -231,30 +231,43 @@ type RankingData = {
 };
 
 async function upsertRanking(data: RankingData) {
-  const { error } = await supabaseAdmin.from("camera_rankings").upsert(
-    {
-      camera_id: data.cameraId,
-      score: data.score,
-      label: data.label ?? null,
-      distance_minutes: data.distanceMinutes ?? null,
-      is_clear: data.isClear ?? false,
-      weather_class: data.weatherClass ?? null,
-      timezone: data.timezone ?? null,
-      sunrise: data.sunrise ? new Date(data.sunrise).toISOString() : null,
-      sunset: data.sunset ? new Date(data.sunset).toISOString() : null,
-      next_event_type: data.nextEventType ?? null,
-      next_event_time: data.nextEventTime?.toISOString() ?? null,
-      following_event_type: data.followingEventType ?? null,
-      following_event_time: data.followingEventTime?.toISOString() ?? null,
-      available: data.available,
-      computed_at: data.computedAt.toISOString(),
-    },
-    { onConflict: "camera_id" }
+  await execute(
+    `INSERT INTO camera_rankings (
+       camera_id, score, label, distance_minutes, is_clear, weather_class,
+       timezone, sunrise, sunset, next_event_type, next_event_time,
+       following_event_type, following_event_time, available, computed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(camera_id) DO UPDATE SET
+       score = excluded.score,
+       label = excluded.label,
+       distance_minutes = excluded.distance_minutes,
+       is_clear = excluded.is_clear,
+       weather_class = excluded.weather_class,
+       timezone = excluded.timezone,
+       sunrise = excluded.sunrise,
+       sunset = excluded.sunset,
+       next_event_type = excluded.next_event_type,
+       next_event_time = excluded.next_event_time,
+       following_event_type = excluded.following_event_type,
+       following_event_time = excluded.following_event_time,
+       available = excluded.available,
+       computed_at = excluded.computed_at`,
+    data.cameraId,
+    data.score,
+    data.label ?? null,
+    data.distanceMinutes ?? null,
+    fromBool(data.isClear ?? false),
+    data.weatherClass ?? null,
+    data.timezone ?? null,
+    data.sunrise ? new Date(data.sunrise).toISOString() : null,
+    data.sunset ? new Date(data.sunset).toISOString() : null,
+    data.nextEventType ?? null,
+    data.nextEventTime?.toISOString() ?? null,
+    data.followingEventType ?? null,
+    data.followingEventTime?.toISOString() ?? null,
+    fromBool(data.available),
+    data.computedAt.toISOString()
   );
-
-  if (error) {
-    throw new Error(error.message);
-  }
 }
 
 function parseDateInTimezone(value: string | undefined | null, timezone?: string) {

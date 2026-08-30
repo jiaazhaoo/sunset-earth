@@ -8,15 +8,13 @@ A Next.js application that intelligently displays live camera feeds showing beau
 - **Automatic Link Refresh**: Smart YouTube link replacement with multi-tier similarity matching
 - **Real-time Availability Checking**: Monitors camera feed health and automatically replaces unavailable streams
 - **Scheduled Automation**: Cron-driven tasks for weather caching, ranking computation, and link maintenance
-- **Shared Rooms**: Optional Cloudflare Realtime presence + voice for watching together
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
-- Supabase project (Postgres)
-- Cloudflare account (for deployment)
+- Cloudflare account (Workers + D1)
 
 ### Installation
 
@@ -37,28 +35,19 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 Copy `.env.example` to `.env.local` and fill in:
 
 ```
-# Required — server-side Supabase (service role)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
 # Required in production — protects the cron/task API routes
 CRON_SECRET=generate-a-long-random-string
 
 # Public base URL of the deployment (used for internal route-to-route calls
 # and by the Cloudflare scheduled() cron handler)
 SITE_URL=https://your-app.workers.dev
-
-# Optional — shared rooms + voice (Cloudflare Realtime / Daily)
-CLOUDFLARE_REALTIME_API_BASE=
-CLOUDFLARE_BASIC_AUTH=
-CLOUDFLARE_REALTIME_PRESET=
-DAILY_API_KEY=
-DAILY_DOMAIN=
 ```
 
-> Note: the app reads env via `process.env`. On Cloudflare Workers, secrets are
-> injected per-request — set them with `wrangler secret put <NAME>` (not in
-> `wrangler.jsonc`, which is committed).
+The database is a Cloudflare D1 binding (`DB`) configured in `wrangler.jsonc`,
+not a connection string — see [d1/README.md](d1/README.md).
+
+> Note: on Cloudflare Workers, secrets are injected per-request — set them with
+> `wrangler secret put <NAME>` (not in `wrangler.jsonc`, which is committed).
 
 ## Architecture
 
@@ -86,13 +75,14 @@ Bearer token.
 
 ### Database Schema
 
-Main tables in Supabase:
-- `camera_ytb`: Camera metadata and YouTube links
-- `camera_rankings`: Computed scores and availability status
+Cloudflare D1 (SQLite). Four tables:
+- `camera_ytb`: Camera metadata and YouTube links — the only irreplaceable data
+- `camera_rankings`: Computed scores and availability status (cron rebuilds it)
+- `camera_weather_cache`: Cached Open-Meteo snapshots (cron refills it)
 - `task_locks`: Distributed lock mechanism for cron jobs
-- `camera_weather_cache` / `camera_sun_cache`: Cached weather & solar data
 
-See [supabase/migrations/](supabase/migrations/) and [PROJECT_ORIENTATION.md](PROJECT_ORIENTATION.md) for the full data model.
+Schema and setup/import instructions: [d1/schema.sql](d1/schema.sql) and
+[d1/README.md](d1/README.md).
 
 ## Project Structure
 
@@ -101,7 +91,7 @@ See [supabase/migrations/](supabase/migrations/) and [PROJECT_ORIENTATION.md](PR
   /api                  # API routes (compute-rankings, weather-cache, replace-link, ...)
 /lib                    # Core libraries (weather, availability, cameraRefresh, task-lock, ...)
 /components             # Client components (camera-viewer, realtime-sidebar, ...)
-/supabase/migrations    # Database schema
+/d1                     # D1 schema, import tooling and DB docs
 /scripts                # Utility & maintenance scripts
 /docs                   # Architecture & development notes
 worker.ts               # Cloudflare Worker entrypoint (fetch + scheduled/cron)
@@ -121,10 +111,11 @@ This project deploys to **Cloudflare Workers** via the
 npx wrangler login
 
 # Set secrets (do NOT put these in wrangler.jsonc)
-npx wrangler secret put SUPABASE_URL
-npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 npx wrangler secret put CRON_SECRET
-# ...and any optional realtime/voice secrets you use
+
+# Create the D1 database and load the schema — see d1/README.md
+npx wrangler d1 create sunset-earth
+npx wrangler d1 execute sunset-earth --remote --file=d1/schema.sql
 ```
 
 Set `SITE_URL` in `wrangler.jsonc` `vars` to your deployed URL (or a custom domain).

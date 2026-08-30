@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { query, queryOne, toBool } from "@/lib/db";
 
 export type CameraRankingRow = {
   camera_id: string;
@@ -16,49 +16,69 @@ export type CameraRankingRow = {
   available: boolean;
 };
 
+/** Raw shape as stored in D1 (booleans are INTEGER 0/1). */
+type RankingDbRow = Omit<CameraRankingRow, "is_clear" | "available"> & {
+  is_clear: number | null;
+  available: number | null;
+};
+
 const RANKING_FIELDS =
   "camera_id,score,label,distance_minutes,is_clear,weather_class,timezone,next_event_type,next_event_time,following_event_type,following_event_time,computed_at,available";
+
+function mapRankingRow(row: RankingDbRow): CameraRankingRow {
+  return {
+    ...row,
+    is_clear: toBool(row.is_clear),
+    available: toBool(row.available),
+  };
+}
 
 export async function fetchAvailableRankings(options: {
   limit?: number;
   freshnessMinutes?: number;
 }) {
   const { limit = 100, freshnessMinutes } = options;
-  let query = supabaseAdmin
-    .from("camera_rankings")
-    .select(RANKING_FIELDS, { count: "exact" })
-    .eq("available", true)
-    .order("score", { ascending: false })
-    .limit(limit);
 
-  if (freshnessMinutes !== undefined) {
-    const threshold = new Date(
-      Date.now() - freshnessMinutes * 60 * 1000
-    ).toISOString();
-    query = query.gte("computed_at", threshold);
-  }
+  // ISO-8601 UTC strings compare lexicographically in the same order as time,
+  // so a plain string >= comparison works as a freshness filter.
+  const threshold =
+    freshnessMinutes !== undefined
+      ? new Date(Date.now() - freshnessMinutes * 60 * 1000).toISOString()
+      : null;
 
-  const { data, error, count } = await query;
-  if (error) {
-    throw new Error(error.message);
-  }
+  const where =
+    threshold !== null
+      ? "available = 1 AND computed_at >= ?"
+      : "available = 1";
+  const params = threshold !== null ? [threshold] : [];
+
+  const rows = await query<RankingDbRow>(
+    `SELECT ${RANKING_FIELDS} FROM camera_rankings
+     WHERE ${where}
+     ORDER BY score DESC, distance_minutes ASC
+     LIMIT ?`,
+    ...params,
+    limit
+  );
+
+  // SQLite has no equivalent of PostgREST's `count: "exact"`, so the total is
+  // a second query against the same predicate.
+  const countRow = await queryOne<{ total: number }>(
+    `SELECT COUNT(*) AS total FROM camera_rankings WHERE ${where}`,
+    ...params
+  );
 
   return {
-    rows: data ?? [],
-    totalAvailable: typeof count === "number" ? count : null,
+    rows: rows.map(mapRankingRow),
+    totalAvailable: countRow?.total ?? null,
   };
 }
 
 export async function fetchRankingByCameraId(cameraId: string) {
-  const { data, error } = await supabaseAdmin
-    .from("camera_rankings")
-    .select(RANKING_FIELDS)
-    .eq("camera_id", cameraId)
-    .maybeSingle();
+  const row = await queryOne<RankingDbRow>(
+    `SELECT ${RANKING_FIELDS} FROM camera_rankings WHERE camera_id = ?`,
+    cameraId
+  );
 
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data ?? null;
+  return row ? mapRankingRow(row) : null;
 }
