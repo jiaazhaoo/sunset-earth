@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
         status: "updated" | "skipped" | "error";
         reason?: string;
         similarity?: number;
+        source?: "channel" | "search";
         bestScore?: number;
         newLink?: string | null;
         newTitle?: string;
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest) {
               id: camera.id,
               status: "updated",
               similarity: result.similarity,
+              source: result.source,
               newLink: result.camera.sourceUrl ?? null,
               newTitle: result.title,
             });

@@ -4,6 +4,7 @@ import { isCameraAvailable } from "@/lib/availability";
 import {
   calculatePlaceMatch,
   fetchChannelLiveCandidates,
+  searchLiveVideos,
   type LiveVideoInfo,
 } from "@/lib/youtube";
 
@@ -14,11 +15,20 @@ import {
  */
 const MIN_MATCH_SCORE = 0.5;
 
+/**
+ * Stricter bar for streams found via site-wide search: those come from
+ * arbitrary channels, so a same-city-different-view match (which the host
+ * channel fallback tolerates) is not good enough here.
+ */
+const MIN_SEARCH_MATCH_SCORE = 0.7;
+
 export type RefreshResult =
   | {
       updated: true;
       similarity: number;
       title: string;
+      /** "channel" = host channel's /streams tab, "search" = YouTube search. */
+      source: "channel" | "search";
       camera: CameraRecord;
     }
   | {
@@ -33,6 +43,8 @@ export type RefreshOptions = {
    * that cameras on the same channel (often 20+) fetch the page once.
    */
   channelCache?: Map<string, Promise<LiveVideoInfo[]>>;
+  /** Skip the YouTube-search fallback (host channel only). */
+  noSearch?: boolean;
 };
 
 export async function refreshCameraById(
@@ -52,16 +64,61 @@ export async function refreshCamera(
 ): Promise<RefreshResult> {
   // No pre-check of the current stream here: a dead live stream and an
   // embed-restricted one both probe as playability_blocked, and in either case
-  // the right move is to look for a replacement on the host channel.
-  if (!camera.hostLink) {
-    return { updated: false, reason: "missing-host" };
+  // the right move is to look for a replacement.
+  //
+  // Never hand two cameras the same stream — every camera has its own
+  // location, weather and sun times, so duplicates make the rankings lie.
+  // Only streams shown by *available* cameras count as taken: a demoted
+  // camera's stale link should not block the camera it really belongs to.
+  const takenByOthers = await videoIdsUsedByOtherCameras(camera.id);
+
+  // 1. The camera's own host channel: cheap, and the most likely place for
+  //    the same view to reappear under a new video id.
+  let channelResult: RefreshResult | null = null;
+  if (camera.hostLink) {
+    const candidates = await loadChannelCandidates(camera.hostLink, options);
+    channelResult = candidates.length
+      ? await adoptBestMatch(camera, candidates, MIN_MATCH_SCORE, takenByOthers, "channel")
+      : { updated: false, reason: "no-live" };
+    if (channelResult.updated) {
+      return channelResult;
+    }
   }
 
-  const candidates = await loadChannelCandidates(camera.hostLink, options);
-  if (!candidates.length) {
-    return { updated: false, reason: "no-live" };
+  // 2. Site-wide search for a live stream of this place. Any channel will do,
+  //    but the match has to be tighter, and the camera's host_link follows
+  //    the stream to its new channel so future repairs look there first.
+  if (!options.noSearch) {
+    const query = [camera.name, camera.city, "live cam"].filter(Boolean).join(" ");
+    let found: LiveVideoInfo[] = [];
+    try {
+      found = await searchLiveVideos(query);
+    } catch (error) {
+      console.warn("[refreshCamera] search failed", camera.id, error);
+    }
+    if (found.length) {
+      const searchResult = await adoptBestMatch(
+        camera, found, MIN_SEARCH_MATCH_SCORE, takenByOthers, "search"
+      );
+      if (searchResult.updated) {
+        return searchResult;
+      }
+      if (!channelResult || channelResult.reason === "no-live") {
+        return searchResult;
+      }
+    }
   }
 
+  return channelResult ?? { updated: false, reason: "missing-host" };
+}
+
+async function adoptBestMatch(
+  camera: CameraRecord,
+  candidates: LiveVideoInfo[],
+  minScore: number,
+  takenByOthers: Set<string>,
+  source: "channel" | "search"
+): Promise<RefreshResult> {
   // Match on the curated place name + city, never on ytb_title: that column
   // holds whatever stream the camera last pointed at, and years of automated
   // replacement have drifted it away from the real location for many rows.
@@ -70,24 +127,15 @@ export async function refreshCamera(
       ...live,
       score: calculatePlaceMatch(camera.name, camera.city, live.title),
     }))
-    .filter((c) => c.score >= MIN_MATCH_SCORE)
     .sort((a, b) => b.score - a.score);
 
-  if (!scored.length) {
-    const best = Math.max(0, ...candidates.map((c) =>
-      calculatePlaceMatch(camera.name, camera.city, c.title)
-    ));
-    return { updated: false, reason: "no-match", bestScore: best };
+  const eligible = scored.filter((c) => c.score >= minScore);
+  if (!eligible.length) {
+    return { updated: false, reason: "no-match", bestScore: scored[0]?.score ?? 0 };
   }
 
-  // Never hand two cameras the same stream — every camera has its own
-  // location, weather and sun times, so duplicates make the rankings lie.
-  // Only streams shown by *available* cameras count as taken: a demoted
-  // camera's stale link should not block the camera it really belongs to.
-  const takenByOthers = await videoIdsUsedByOtherCameras(camera.id);
-
   let sawPlayable = false;
-  for (const match of scored) {
+  for (const match of eligible) {
     if (takenByOthers.has(match.videoId)) {
       continue;
     }
@@ -100,24 +148,30 @@ export async function refreshCamera(
     sawPlayable = true;
 
     const newLink = `https://www.youtube.com/watch?v=${match.videoId}`;
+    const newHost =
+      source === "search" && match.channelUrl
+        ? `${match.channelUrl}/streams`
+        : camera.hostLink;
     await execute(
       `UPDATE camera_ytb
-       SET link = ?, ytb_title = ?, link_available = 1, last_check = ?
+       SET link = ?, ytb_title = ?, host_link = ?, link_available = 1, last_check = ?
        WHERE camera_id = ?`,
       newLink,
       match.title,
+      newHost,
       nowIso(),
       camera.id
     );
 
     const updatedCamera = await getCameraById(camera.id);
     console.log(
-      `[refreshCamera] ${camera.id} "${camera.name}" -> ${match.videoId} (${match.score.toFixed(2)}) ${match.title}`
+      `[refreshCamera] ${camera.id} "${camera.name}" -> ${match.videoId} via ${source} (${match.score.toFixed(2)}) ${match.title}`
     );
     return {
       updated: true,
       similarity: match.score,
       title: match.title,
+      source,
       camera: updatedCamera ?? camera,
     };
   }
