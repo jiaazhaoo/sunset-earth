@@ -31,7 +31,24 @@ Branch: `claude/project-restart-review-aqb9rc`
   build` succeeds, and schema + seeds load into a local D1 with matching row
   counts, normalized timestamps and intact JSON.
 
-**Nothing has been deployed yet, and the D1 database is still empty.**
+---
+
+## Status update — 2026-09-17 (local session)
+
+Deployed and verified. Live at `https://sunset-earth.zhaojia789456.workers.dev`.
+
+- The D1 database was **not** empty: it already held 156 cameras with
+  `last_check = 2026-08-30` from an earlier deploy attempt that day. That data is
+  newer than `d1/seed-cameras.sql`, so the seed was not applied.
+- `d1/seed-cameras.sql` originally wrapped the inserts in `BEGIN TRANSACTION`/
+  `COMMIT`, which remote D1 rejects (local D1 accepts it). Both the seed and
+  `d1/csv-to-sql.mjs` now emit plain statements; wrangler applies a `--file`
+  import atomically anyway.
+- `CRON_SECRET` was rotated (old value unknown) and saved to `.dev.vars`.
+- `refresh-links`, `weather-cache` and `compute-rankings` all ran cleanly;
+  `rankings-health` reports 113 available cameras. The 5-minute cron trigger
+  fired on its own within minutes of deploy.
+- Homepage plays a live stream and "Next camera" switches correctly.
 
 ---
 
