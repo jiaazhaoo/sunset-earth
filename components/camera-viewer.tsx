@@ -2,6 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { CameraRecord } from "@/lib/cameras";
+import { useNow } from "@/components/use-now";
+import {
+  describeSunPhase,
+  describeWeather,
+  formatClock,
+  formatZoneAbbr,
+} from "@/lib/sun-format";
 
 declare global {
   interface Window {
@@ -177,7 +184,6 @@ function VideoFrame({
 export function CameraViewer({ initialCamera }: Props) {
   const [camera, setCamera] = useState<CameraRecord | null>(initialCamera);
   const [cameraMeta, setCameraMeta] = useState<CameraMeta | null>(null);
-  const [localTime, setLocalTime] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [, setError] = useState<string | null>(null);
   const [seen, setSeen] = useState<string[]>(
@@ -283,272 +289,183 @@ export function CameraViewer({ initialCamera }: Props) {
   const activeTimezone =
     camera?.timezone ?? cameraMeta?.timezone ?? null;
 
-  useEffect(() => {
-    if (!activeTimezone) {
-      setLocalTime("Unknown");
-      return;
-    }
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: activeTimezone,
-      weekday: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    const update = () => {
-      const utcNow = new Date(Date.now());
-      setLocalTime(formatter.format(utcNow));
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [activeTimezone]);
+
+  const now = useNow(1000);
+
+  const location = [camera?.city, camera?.country].filter(Boolean).join(", ");
 
   return (
-    <section className="grid w-full grid-cols-1 items-start gap-6 lg:grid-cols-[1.5fr,1fr]">
-      <div className="flex w-full justify-center">
-        <div className="aspect-video w-full max-w-[80%] overflow-hidden rounded-2xl border border-zinc-200/50 bg-black shadow-xl ring-1 ring-black/5 dark:border-zinc-700/50 dark:ring-white/5">
+    <section className="flex w-full flex-col gap-5">
+      {/* Player */}
+      <div className="relative">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -inset-x-6 -top-8 -bottom-10 -z-10 rounded-[2.5rem] bg-[radial-gradient(60%_60%_at_50%_40%,rgba(251,146,60,0.18),transparent_70%)] blur-2xl"
+        />
+        <div className="aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)] ring-1 ring-line-strong sm:rounded-3xl">
           {camera?.embedUrl ? (
             <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-400 dark:text-zinc-500">
+            <div className="flex h-full w-full items-center justify-center text-sm text-muted">
               No playable camera right now
             </div>
           )}
         </div>
       </div>
 
-      <div className="flex w-full justify-center">
-        <div className="flex w-full max-w-[80%] flex-col gap-4 rounded-2xl border border-zinc-200/50 bg-white/85 p-4 shadow-lg backdrop-blur-sm dark:border-zinc-700/50 dark:bg-zinc-800/90">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50 sm:text-3xl">
-                  {camera?.name ?? "No active stream"}
-                </h2>
-                {camera?.tags?.length ? (
-                  <span className="rounded-full border border-orange-200/60 bg-gradient-to-br from-orange-50 to-amber-50 px-2 py-0.5 text-xs font-medium text-orange-700 dark:border-orange-500/30 dark:from-orange-950/50 dark:to-amber-950/30 dark:text-orange-300">
-                    {camera.tags[0]}
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-1 flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span>
-                  {[camera?.city, camera?.country].filter(Boolean).join(" · ") ||
-                    "Waiting for location..."}
-                </span>
-              </div>
-            </div>
-
-            <CameraActions
-              cameraId={camera?.id ?? null}
-              loading={loading}
-              onSwitchClick={handleSwitch}
-              layout="inline"
-            />
+      {/* Title row */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              {camera?.name ?? "No active stream"}
+            </h1>
+            {camera?.tags?.[0] ? (
+              <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent">
+                {camera.tags[0]}
+              </span>
+            ) : null}
           </div>
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted">
+            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span className="truncate">{location || "Location pending"}</span>
+            {camera?.sourceUrl ? (
+              <>
+                <span aria-hidden className="text-faint">·</span>
+                <a
+                  href={camera.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="shrink-0 text-faint underline-offset-4 transition hover:text-foreground hover:underline"
+                >
+                  Open on YouTube
+                </a>
+              </>
+            ) : null}
+          </p>
         </div>
-        {process.env.NODE_ENV !== "production" && (
-          <DebugFloatingPanel
-            score={cameraMeta?.score ?? null}
-            label={cameraMeta?.label ?? null}
-            meta={cameraMeta}
-            localTime={localTime}
-            timezone={activeTimezone}
-          />
-        )}
+
+        <div className="flex items-center gap-3">
+          {process.env.NODE_ENV !== "production" && cameraMeta ? (
+            <span className="rounded-md border border-line px-2 py-1 font-mono text-xs text-faint">
+              score {cameraMeta.score}
+              {cameraMeta.label ? ` · ${cameraMeta.label}` : ""}
+            </span>
+          ) : null}
+          <CameraActions loading={loading} onSwitchClick={handleSwitch} />
+        </div>
       </div>
+
+      {/* Stats */}
+      <CameraStats meta={cameraMeta} timezone={activeTimezone} now={now} />
     </section>
   );
 }
-function DebugFloatingPanel({
-  score,
-  label,
+
+function CameraStats({
   meta,
-  localTime,
   timezone,
+  now,
 }: {
-  score: number | null;
-  label: string | null;
   meta: CameraMeta | null;
-  localTime: string;
   timezone: string | null;
+  now: Date | null;
 }) {
-  const displayEvent = pickClosestEvent(
-    meta?.nextEvent ?? null,
-    meta?.followingEvent ?? null
-  );
-  const weatherText = meta
-    ? describeWeather(meta?.weatherClass)
-    : { title: "Waiting for weather", subtitle: "Updating the forecast", icon: "⏳" };
+  const clock = now ? formatClock(now, timezone) : "--:--";
+  const zone = now ? formatZoneAbbr(timezone, now) : "";
+  const phase = now
+    ? describeSunPhase(meta?.nextEvent, meta?.followingEvent, now, timezone)
+    : null;
+  const sky = describeWeather(meta?.weatherClass);
+
+  const toneRing =
+    phase?.tone === "golden"
+      ? "ring-amber-400/40 bg-amber-400/10"
+      : phase?.tone === "blue"
+        ? "ring-sky-400/40 bg-sky-400/10"
+        : "ring-line bg-surface";
 
   return (
-    <a
-      href="/dev/pools"
-      className="fixed bottom-4 right-4 z-50 rounded-2xl border border-white/10 bg-black/80 px-4 py-3 text-sm text-white shadow-2xl shadow-black/60 backdrop-blur transition-all hover:border-orange-500/50 hover:shadow-orange-500/20 cursor-pointer"
-    >
-      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-orange-500">
-        <span>🎯</span>
-        <span>Priority</span>
-      </p>
-      <p className="mt-1 text-2xl font-semibold">{score ?? "--"}</p>
-      <p className="text-xs text-white/70 mb-3">{label ?? "No label"}</p>
-
-      <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
-        <div>
-          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-sky-400/80">
-            <span>{weatherText.icon}</span>
-            <span>Weather</span>
-          </p>
-          <p className="mt-0.5 text-sm font-medium">{weatherText.title}</p>
-          <p className="text-xs text-white/60">{weatherText.subtitle}</p>
-        </div>
-
-        <div>
-          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-rose-400/80">
-            <span>🌅</span>
-            <span>Sun event</span>
-          </p>
-          <p className="mt-0.5 text-sm font-medium">{describeEventTitle(displayEvent)}</p>
-          <p className="text-xs text-white/60">{describeEventTime(displayEvent, timezone)}</p>
-        </div>
-
-        <div>
-          <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-violet-400/80">
-            <span>🕐</span>
-            <span>Local time</span>
-          </p>
-          <p className="mt-0.5 text-sm font-medium">{localTime || "--"}</p>
-          <p className="text-xs text-white/60">{timezone ?? "No timezone"}</p>
-        </div>
-      </div>
-    </a>
+    <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <StatTile
+        label="Local time"
+        icon="🕐"
+        value={<span className="tnum">{clock}</span>}
+        detail={zone ? `${zone} · ${timezone}` : (timezone ?? "Timezone pending")}
+      />
+      <StatTile
+        label="Light"
+        icon={phase?.event?.type === "sunrise" ? "🌅" : "🌇"}
+        value={phase?.title ?? "—"}
+        detail={phase?.detail ?? "Waiting for sun times"}
+        className={toneRing}
+      />
+      <StatTile label="Sky" icon={sky.icon} value={sky.title} detail={sky.detail} />
+    </dl>
   );
 }
 
-function describeWeather(weatherClass?: string | null) {
-  switch (weatherClass) {
-    case "clear":
-      return { title: "Clear skies", subtitle: "Crisp colors guaranteed", icon: "☀️" };
-    case "partly-cloudy":
-      return { title: "Partly cloudy", subtitle: "Cloud drama possible", icon: "⛅" };
-    case "light-snow":
-      return { title: "Light snow", subtitle: "Snowflakes add atmosphere", icon: "🌨️" };
-    case "other":
-    default:
-      return { title: "Clouds or rain", subtitle: "Sunset glow may be muted", icon: "☁️" };
-  }
-}
-
-function describeEventTitle(
-  nextEvent: CameraMeta["nextEvent"] | null
-) {
-  if (!nextEvent) {
-    return "Waiting for data";
-  }
-  return nextEvent.type === "sunrise" ? "Sunrise" : "Sunset";
-}
-
-function describeEventTime(
-  nextEvent: CameraMeta["nextEvent"] | null,
-  timezone: string | null
-) {
-  if (!nextEvent || !timezone) {
-    return "No schedule";
-  }
-  try {
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      weekday: "short",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    return formatter.format(new Date(nextEvent.timeISO));
-  } catch {
-    return "Invalid time";
-  }
-}
-
-function pickClosestEvent(
-  nextEvent: CameraMeta["nextEvent"] | null,
-  followingEvent: CameraMeta["followingEvent"] | null
-) {
-  const events = [nextEvent, followingEvent].filter(Boolean) as Array<
-    NonNullable<CameraMeta["nextEvent"]>
-  >;
-  if (!events.length) {
-    return null;
-  }
-  const now = Date.now();
-  const parsed = events
-    .map((event) => ({
-      event,
-      timestamp: Date.parse(event.timeISO),
-    }))
-    .filter((entry) => !Number.isNaN(entry.timestamp));
-  if (!parsed.length) {
-    return null;
-  }
-  const closest = parsed.reduce((prev, curr) => {
-    const prevDistance = Math.abs(prev.timestamp - now);
-    const currDistance = Math.abs(curr.timestamp - now);
-    return currDistance < prevDistance ? curr : prev;
-  }, parsed[0]);
-  return closest.event;
+function StatTile({
+  label,
+  icon,
+  value,
+  detail,
+  className = "ring-line bg-surface",
+}: {
+  label: string;
+  icon: string;
+  value: React.ReactNode;
+  detail: string;
+  className?: string;
+}) {
+  return (
+    <div className={`flex items-start gap-3 rounded-2xl p-4 ring-1 ${className}`}>
+      <span aria-hidden className="mt-0.5 text-xl leading-none">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-faint">
+          {label}
+        </dt>
+        <dd className="mt-0.5 truncate text-lg font-semibold text-foreground">{value}</dd>
+        <dd className="truncate text-xs text-muted">{detail}</dd>
+      </div>
+    </div>
+  );
 }
 
 function CameraActions({
-  cameraId,
   loading,
   onSwitchClick,
-  layout = "stacked",
 }: {
-  cameraId: string | null;
   loading: boolean;
   onSwitchClick: () => void;
-  layout?: "stacked" | "inline";
 }) {
-  const containerClasses =
-    layout === "inline"
-      ? "flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end"
-      : "flex flex-col gap-2";
-  const primaryButtonClasses = `${
-    layout === "inline" ? "w-full px-5 py-2.5 sm:w-auto" : "w-full px-6 py-3"
-  } group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 text-sm font-semibold text-white shadow-lg shadow-orange-500/25 transition-all hover:shadow-xl hover:shadow-orange-500/40 disabled:cursor-not-allowed disabled:from-zinc-300 disabled:to-zinc-400 disabled:shadow-none dark:from-orange-600 dark:to-rose-600 dark:shadow-orange-600/20 dark:hover:shadow-orange-600/30 dark:disabled:from-zinc-700 dark:disabled:to-zinc-600`;
   return (
-    <div className={containerClasses}>
-      <button
-        onClick={onSwitchClick}
-        disabled={loading}
-        className={primaryButtonClasses}
-      >
-        <span className="relative z-10 flex items-center gap-2">
-          {loading ? (
-            <>
-              <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Switching…
-            </>
-          ) : (
-            <>
-              <svg className="h-4 w-4 transition-transform group-hover:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Next camera
-            </>
-          )}
-        </span>
-        <div className="absolute inset-0 -z-0 bg-gradient-to-r from-orange-600 to-rose-600 opacity-0 transition-opacity group-hover:opacity-100 dark:from-orange-700 dark:to-rose-700"></div>
-      </button>
-    </div>
+    <button
+      onClick={onSwitchClick}
+      disabled={loading}
+      className="group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:shadow-xl hover:shadow-orange-500/30 disabled:cursor-not-allowed disabled:from-zinc-700 disabled:to-zinc-600 disabled:shadow-none sm:w-auto"
+    >
+      {loading ? (
+        <>
+          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          Switching…
+        </>
+      ) : (
+        <>
+          <svg className="h-4 w-4 transition-transform group-hover:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Next camera
+        </>
+      )}
+    </button>
   );
 }
