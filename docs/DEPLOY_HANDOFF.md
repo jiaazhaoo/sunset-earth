@@ -35,7 +35,12 @@ Branch: `claude/project-restart-review-aqb9rc`
 
 ## Status update — 2026-09-17 (local session)
 
-Deployed and verified. Live at `https://sunset-earth.zhaojia789456.workers.dev`.
+Deployed and verified. Live at **https://sunset-earth.com** (and `www.`);
+the `workers.dev` hostname is disabled.
+
+- Custom domains are declared in `wrangler.jsonc` → `routes`. Attaching them
+  required deleting the old Vercel `A` / `CNAME` records in the dashboard first;
+  the two `_vercel.` TXT verification records were left in place (harmless).
 
 - The D1 database was **not** empty: it already held 156 cameras with
   `last_check = 2026-08-30` from an earlier deploy attempt that day. That data is

@@ -19,6 +19,15 @@
       "database_id": "d270a188-ef17-4392-991e-b78d567b55f3"
     }
   ],
+  // Custom domains. wrangler deploy creates the DNS records and certificates
+  // itself; the zone (sunset-earth.com) lives in the same Cloudflare account.
+  // Any pre-existing A/CNAME on these hostnames must be deleted first
+  // (Cloudflare refuses to override externally managed records).
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "sunset-earth.com", "custom_domain": true },
+    { "pattern": "www.sunset-earth.com", "custom_domain": true }
+  ],
   "observability": {
     "enabled": true
   },
