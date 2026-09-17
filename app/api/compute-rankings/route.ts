@@ -85,24 +85,27 @@ async function executeComputeRankings() {
       summary.processed++;
 
       try {
-        // Skip cameras without coordinates
-        if (camera.lat === null || camera.lng === null) {
-          summary.skipped++;
-          summary.details.push({
-            id: camera.id,
-            status: "skipped",
-            reason: "missing-coordinates",
+        // Cameras we cannot score still get a ranking row marked unavailable:
+        // otherwise a camera demoted since the last run keeps its old
+        // available=1 row, inflating counts and rotation until it is repaired.
+        const skipReason =
+          camera.lat === null || camera.lng === null
+            ? "missing-coordinates"
+            : camera.linkAvailable === false
+              ? "link-unavailable"
+              : null;
+        if (skipReason) {
+          await upsertRanking({
+            cameraId: camera.id,
+            score: 0,
+            available: false,
+            computedAt: now,
           });
-          continue;
-        }
-
-        // Skip explicitly disabled cameras
-        if (camera.linkAvailable === false) {
           summary.skipped++;
           summary.details.push({
             id: camera.id,
             status: "skipped",
-            reason: "link-unavailable",
+            reason: skipReason,
           });
           continue;
         }
