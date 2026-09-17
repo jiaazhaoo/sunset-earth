@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { devToolsEnabled, devToolsDisabledResponse } from "@/lib/auth";
 import { getCameraById } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
 
@@ -6,6 +7,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
+  if (!devToolsEnabled()) return devToolsDisabledResponse();
+
   try {
     const cameraId = request.nextUrl.searchParams.get("cameraId");
     if (!cameraId) {

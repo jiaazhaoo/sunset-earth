@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { devToolsEnabled, devToolsDisabledResponse } from "@/lib/auth";
 import type { CameraRecord } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
 
@@ -6,6 +7,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
+  if (!devToolsEnabled()) return devToolsDisabledResponse();
+
   const url = request.nextUrl.searchParams.get("url") || "";
 
   if (!url) {

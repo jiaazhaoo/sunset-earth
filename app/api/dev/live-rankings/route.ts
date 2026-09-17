@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { devToolsEnabled, devToolsDisabledResponse } from "@/lib/auth";
 import { listCameras } from "@/lib/cameras";
 import {
   getBulkCachedWeatherSnapshots,
@@ -10,6 +11,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 10;
 
 export async function GET() {
+  if (!devToolsEnabled()) return devToolsDisabledResponse();
+
   try {
     // Fetch all available cameras
     const allCameras = await listCameras(200);

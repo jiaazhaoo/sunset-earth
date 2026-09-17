@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth";
 import { listCameras } from "@/lib/cameras";
 import { getCachedWeatherSnapshot } from "@/lib/weather";
 import { scoreCameraWeather } from "@/lib/client-ranking-v2";
@@ -13,15 +14,8 @@ const BATCH_SIZE = 50;
 
 export async function GET(request: NextRequest) {
   try {
-    if (process.env.CRON_SECRET) {
-      const auth = request.headers.get("Authorization");
-      if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-        return NextResponse.json(
-          { error: "Unauthorized" },
-          { status: 401 }
-        );
-      }
-    }
+    const denied = requireCronSecret(request);
+    if (denied) return denied;
 
     // Check if weather-cache is still running
     const weatherCacheRunning = await isTaskLocked("weather-cache");
@@ -91,24 +85,27 @@ async function executeComputeRankings() {
       summary.processed++;
 
       try {
-        // Skip cameras without coordinates
-        if (camera.lat === null || camera.lng === null) {
-          summary.skipped++;
-          summary.details.push({
-            id: camera.id,
-            status: "skipped",
-            reason: "missing-coordinates",
+        // Cameras we cannot score still get a ranking row marked unavailable:
+        // otherwise a camera demoted since the last run keeps its old
+        // available=1 row, inflating counts and rotation until it is repaired.
+        const skipReason =
+          camera.lat === null || camera.lng === null
+            ? "missing-coordinates"
+            : camera.linkAvailable === false
+              ? "link-unavailable"
+              : null;
+        if (skipReason) {
+          await upsertRanking({
+            cameraId: camera.id,
+            score: 0,
+            available: false,
+            computedAt: now,
           });
-          continue;
-        }
-
-        // Skip explicitly disabled cameras
-        if (camera.linkAvailable === false) {
           summary.skipped++;
           summary.details.push({
             id: camera.id,
             status: "skipped",
-            reason: "link-unavailable",
+            reason: skipReason,
           });
           continue;
         }

@@ -55,6 +55,23 @@ the `workers.dev` hostname is disabled.
   fired on its own within minutes of deploy.
 - Homepage plays a live stream and "Next camera" switches correctly.
 
+### Follow-up the same day: availability pipeline fixes
+
+- Browsers could demote any camera globally (unauthenticated report on every
+  player error or 5 s timeout) — now server-verified, cooldown-limited, and
+  no longer fans out to replace-link. `/api/dev/*`, `/dev/*` are hidden in
+  production (`ENABLE_DEV_ROUTES=1` to expose); `check-camera` and
+  `refresh-camera` require `CRON_SECRET`.
+- `replace-link` had never repaired anything: it skipped any camera whose
+  stream probed as `playability_blocked` (i.e. every dead stream), built
+  `<host_link>/streams/live` URLs, and parsed YouTube's old `videoRenderer`
+  markup. It now fetches `/streams`, parses `lockupViewModel`, matches on
+  `placename + city` (never `ytb_title`, which had drifted), refuses to give
+  two cameras the same stream, and caches each channel page per run.
+- Data cleanup: 156 links were probed from a workstation as ground truth;
+  duplicate streams and cameras showing the wrong location were demoted and
+  re-matched. Result: 101 available cameras, all distinct streams.
+
 ---
 
 ## What is left (needs Cloudflare auth)

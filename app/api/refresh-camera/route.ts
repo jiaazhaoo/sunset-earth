@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth";
 import { refreshCameraById } from "@/lib/cameraRefresh";
 
 export async function POST(request: NextRequest) {
+  const denied = requireCronSecret(request);
+  if (denied) return denied;
+
   try {
     const { cameraId } = (await request.json()) as {
       cameraId?: string;
