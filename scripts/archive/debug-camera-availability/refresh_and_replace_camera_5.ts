@@ -29,7 +29,7 @@ async function refreshAndReplaceCamera5() {
   console.log("\nRefresh result:");
   console.log(JSON.stringify(result, null, 2));
 
-  if (result.updated && result.camera) {
+  if (result.updated) {
     console.log("\n✅ Successfully updated camera!");
     console.log("New source URL:", result.camera.sourceUrl);
     console.log("New title:", result.camera.ytbTitle);

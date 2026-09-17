@@ -14,10 +14,6 @@ function getString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function asRecordArray(value: unknown) {
-  return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
 export async function fetchChannelLiveVideo(
   channelUrl: string
 ): Promise<LiveVideoInfo | null> {
@@ -32,12 +28,13 @@ export async function fetchChannelLiveCandidates(
     return [];
   }
 
-  const normalized = channelUrl.endsWith("/")
-    ? channelUrl.slice(0, -1)
-    : channelUrl;
-  const liveUrl = normalized.endsWith("/live")
-    ? normalized
-    : `${normalized}/live`;
+  // Fetch the channel's /streams tab: it lists every current live stream,
+  // whereas /live only exposes the one the channel chose to feature. Strip any
+  // tab already on the stored host_link so we never build "/streams/live".
+  const normalized = channelUrl
+    .replace(/\/+$/, "")
+    .replace(/\/(live|streams|videos|featured)$/, "");
+  const liveUrl = `${normalized}/streams`;
 
   const response = await fetch(liveUrl, {
     headers: {
@@ -101,106 +98,91 @@ function extractJson(html: string, key: string) {
 type YoutubeNode = Record<string, unknown>;
 
 function findLiveRenderer(raw: unknown): LiveVideoInfo[] {
-  try {
-    const sectionBlocks = getSectionBlocks(raw);
-    if (!sectionBlocks.length) {
-      return [] as LiveVideoInfo[];
+  // YouTube has shipped two markups for the /streams grid: the legacy
+  // `videoRenderer` (with thumbnailOverlays) and, since 2025, `lockupViewModel`
+  // (with thumbnailBadgeViewModel). Rather than track the exact tab/section
+  // nesting, which also changes, walk the whole tree and accept either shape.
+  const candidates: LiveVideoInfo[] = [];
+  const seen = new Set<string>();
+  const push = (videoId: string, title: string) => {
+    if (!seen.has(videoId)) {
+      seen.add(videoId);
+      candidates.push({ videoId, title });
     }
-    const candidates: LiveVideoInfo[] = [];
-    for (const block of sectionBlocks) {
-      const items = getBlockItems(block);
-      for (const item of items) {
-        const renderer = getVideoRenderer(item);
-        if (!renderer) {
-          continue;
-        }
-        const videoId = getString(renderer["videoId"]);
-        if (!videoId) {
-          continue;
-        }
-        if (!hasLiveBadge(renderer)) {
-          continue;
-        }
-        const title = extractTitle(renderer);
-        candidates.push({ videoId, title });
+  };
+
+  const walk = (node: unknown, depth: number) => {
+    if (depth > 60) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, depth + 1);
+      return;
+    }
+    if (!isRecord(node)) return;
+
+    const renderer = node["videoRenderer"];
+    if (isRecord(renderer)) {
+      const videoId = getString(renderer["videoId"]);
+      if (videoId && hasLiveBadge(renderer)) {
+        push(videoId, extractTitle(renderer));
       }
     }
-    return candidates;
+
+    const lockup = node["lockupViewModel"];
+    if (isRecord(lockup)) {
+      const videoId = getString(lockup["contentId"]);
+      const type = getString(lockup["contentType"]);
+      if (
+        videoId &&
+        (type === null || type === "LOCKUP_CONTENT_TYPE_VIDEO") &&
+        lockupIsLive(lockup)
+      ) {
+        push(videoId, extractLockupTitle(lockup));
+      }
+      return; // no live markers nest deeper than the lockup itself
+    }
+
+    for (const value of Object.values(node)) walk(value, depth + 1);
+  };
+
+  try {
+    walk(raw, 0);
   } catch (error) {
     console.warn("[youtube] failed to search live renderer", error);
   }
-  return [];
+  return candidates;
 }
 
-function getSectionBlocks(raw: unknown): YoutubeNode[] {
-  if (!isRecord(raw)) {
-    return [];
-  }
-  const contentsNode = raw["contents"];
-  if (!isRecord(contentsNode)) {
-    return [];
-  }
-  const twoColumn = contentsNode["twoColumnBrowseResultsRenderer"];
-  if (!isRecord(twoColumn)) {
-    return [];
-  }
-  const tabs = asRecordArray(twoColumn["tabs"]);
-  const blocks: YoutubeNode[] = [];
-  for (const tab of tabs) {
-    const tabRenderer = tab["tabRenderer"];
-    if (!isRecord(tabRenderer)) {
-      continue;
+/** Does any thumbnailBadgeViewModel inside the lockup carry the LIVE style? */
+function lockupIsLive(lockup: YoutubeNode): boolean {
+  let live = false;
+  const walk = (node: unknown, depth: number) => {
+    if (live || depth > 30) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, depth + 1);
+      return;
     }
-    const content = tabRenderer["content"];
-    if (!isRecord(content)) {
-      continue;
+    if (!isRecord(node)) return;
+    const badge = node["thumbnailBadgeViewModel"];
+    if (
+      isRecord(badge) &&
+      getString(badge["badgeStyle"]) === "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
+    ) {
+      live = true;
+      return;
     }
-    const section = content["sectionListRenderer"];
-    if (!isRecord(section)) {
-      const richGrid = content["richGridRenderer"];
-      if (isRecord(richGrid)) {
-        blocks.push(content);
-      }
-      continue;
-    }
-    blocks.push(...asRecordArray(section["contents"]));
-    const richGrid = content["richGridRenderer"];
-    if (isRecord(richGrid)) {
-      blocks.push(content);
-    }
-  }
-  return blocks;
+    for (const value of Object.values(node)) walk(value, depth + 1);
+  };
+  walk(lockup["contentImage"], 0);
+  return live;
 }
 
-function getBlockItems(block: YoutubeNode): YoutubeNode[] {
-  const items: YoutubeNode[] = [];
-  const itemSection = block["itemSectionRenderer"];
-  if (isRecord(itemSection)) {
-    items.push(...asRecordArray(itemSection["contents"]));
-  }
-  const richGrid = block["richGridRenderer"];
-  if (isRecord(richGrid)) {
-    items.push(...asRecordArray(richGrid["contents"]));
-  }
-  return items;
-}
-
-function getVideoRenderer(item: YoutubeNode): YoutubeNode | null {
-  const directRenderer = item["videoRenderer"];
-  if (isRecord(directRenderer)) {
-    return directRenderer;
-  }
-  const richItem = item["richItemRenderer"];
-  if (isRecord(richItem)) {
-    const content = richItem["content"];
-    if (isRecord(content)) {
-      const nested = content["videoRenderer"];
-      if (isRecord(nested)) {
-        return nested;
-      }
-    }
-  }
-  return null;
+function extractLockupTitle(lockup: YoutubeNode): string {
+  const metadata = lockup["metadata"];
+  if (!isRecord(metadata)) return "";
+  const view = metadata["lockupMetadataViewModel"];
+  if (!isRecord(view)) return "";
+  const title = view["title"];
+  return isRecord(title) ? getString(title["content"]) ?? "" : "";
 }
 
 function hasLiveBadge(renderer: YoutubeNode) {
@@ -262,6 +244,90 @@ export function calculateSimilarity(a: string, b: string) {
  * - Different title formats (marketing vs. descriptive)
  * - Location-based matching with geographic knowledge
  */
+// Words that carry no location signal in a stream title.
+const TITLE_STOP_WORDS = new Set([
+  "live", "stream", "streaming", "24", "hd", "4k", "camera", "cam", "webcam",
+  "view", "relaxing", "music", "watch", "now", "the", "a", "an", "in", "at",
+  "on", "of", "and", "or", "to", "from", "with", "new", "old", "us", "usa",
+]);
+
+// Locations that different channels spell differently.
+const LOCATION_SYNONYMS: Record<string, string[]> = {
+  yellowstone: ["yellowstone", "geyser", "basin", "faithful", "geysir"],
+  zermatt: ["zermatt", "matterhorn"],
+  iceland: ["iceland", "reykjavik", "islanda"],
+  volcano: ["volcano", "vulkan", "vulcano", "volcan"],
+  harbour: ["harbour", "harbor", "port", "hafen"],
+  mountain: ["mountain", "mount", "mt", "berg", "mont", "monte"],
+  street: ["street", "st"],
+  saint: ["saint", "st", "san", "santa", "sankt"],
+};
+
+// Generic geography words that appear in half the titles on a channel. They
+// still count, but at half weight, so "Port of Saint-Malo" cannot match
+// "Saint-Quay-Portrieux - Le Port" on "port" + "saint" alone.
+const WEAK_WORDS = new Set([
+  "saint", "st", "san", "santa", "port", "lake", "beach", "mount", "mountain",
+  "city", "bay", "harbor", "harbour", "island", "park", "river", "bridge",
+  "square", "tower", "street", "downtown", "north", "south", "east", "west",
+]);
+
+function titleKeywords(text: string): string[] {
+  return text
+    .toLowerCase()
+    // Keep letters/digits in any script so non-Latin titles still yield words.
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 1 && !TITLE_STOP_WORDS.has(word));
+}
+
+function expandSynonyms(words: Iterable<string>): Set<string> {
+  const expanded = new Set(words);
+  for (const word of [...expanded]) {
+    for (const group of Object.values(LOCATION_SYNONYMS)) {
+      if (group.includes(word)) group.forEach((w) => expanded.add(w));
+    }
+  }
+  return expanded;
+}
+
+/** Weighted fraction of `reference` keywords found in `candidate` (0..1). */
+function keywordCoverage(reference: string, candidate: Set<string>): number {
+  const words = titleKeywords(reference);
+  if (!words.length) return 0;
+  let total = 0;
+  let hits = 0;
+  for (const word of words) {
+    const weight = WEAK_WORDS.has(word) ? 0.5 : 1;
+    total += weight;
+    if (candidate.has(word)) hits += weight;
+  }
+  return hits / total;
+}
+
+/**
+ * How well a live-stream title matches a camera's curated location.
+ *
+ * Stream titles are verbose ("Boston Weather Cam, MA Live Cam - Green Line")
+ * while our reference is short ("Green Line", Boston), so symmetric measures
+ * like Jaccard punish every extra word in the title. Instead score how much of
+ * the *reference* the title covers, weighting the place name over the city:
+ * the name is what distinguishes cameras on the same channel.
+ */
+export function calculatePlaceMatch(
+  placeName: string,
+  city: string | null | undefined,
+  candidateTitle: string
+): number {
+  const candidate = expandSynonyms(titleKeywords(candidateTitle));
+  const nameScore = keywordCoverage(placeName, candidate);
+  // The city only adds confidence once the place name itself half-matches;
+  // otherwise any stream in the same city ("Chicago") would clear the bar.
+  if (!city || nameScore < 0.5) return 0.7 * nameScore;
+  const cityScore = keywordCoverage(city, candidate);
+  return 0.7 * nameScore + 0.3 * cityScore;
+}
+
 export function calculateSmartSimilarity(reference: string, candidate: string): number {
   // Remove emojis and special characters
   const cleanRef = reference

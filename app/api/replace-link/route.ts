@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/auth";
 import { listCameras } from "@/lib/cameras";
-import { refreshCamera } from "@/lib/cameraRefresh";
+import { refreshCamera, type RefreshOptions } from "@/lib/cameraRefresh";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -21,9 +21,14 @@ export async function GET(request: NextRequest) {
         status: "updated" | "skipped" | "error";
         reason?: string;
         similarity?: number;
+        bestScore?: number;
         newLink?: string | null;
+        newTitle?: string;
       }>,
     };
+
+    // Cameras on the same channel share one fetch of its /streams page.
+    const refreshOptions: RefreshOptions = { channelCache: new Map() };
 
     let offset = 0;
     while (true) {
@@ -39,28 +44,25 @@ export async function GET(request: NextRequest) {
         }
         summary.checked++;
         try {
-          const result = await refreshCamera(camera);
+          const result = await refreshCamera(camera, refreshOptions);
           if (result.updated) {
             summary.refreshed++;
             summary.details.push({
               id: camera.id,
               status: "updated",
-              similarity: (result as { similarity?: number }).similarity,
-              newLink: result.camera?.sourceUrl ?? null,
-            });
-            console.log("[replace-link] updated", camera.id, {
-              similarity: (result as { similarity?: number }).similarity,
-              newLink: result.camera?.sourceUrl,
+              similarity: result.similarity,
+              newLink: result.camera.sourceUrl ?? null,
+              newTitle: result.title,
             });
           } else {
             summary.failed++;
-            const reason = (result as { reason?: string }).reason ?? "unknown";
             summary.details.push({
               id: camera.id,
               status: "skipped",
-              reason,
+              reason: result.reason,
+              bestScore: result.bestScore,
             });
-            console.log("[replace-link] skipped", camera.id, reason);
+            console.log("[replace-link] skipped", camera.id, result.reason);
           }
         } catch (error) {
           console.warn("[replace-link] failed to refresh", camera.id, error);
