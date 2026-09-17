@@ -4,6 +4,8 @@ const USER_AGENT =
 export type LiveVideoInfo = {
   videoId: string;
   title: string;
+  /** Channel URL ("https://www.youtube.com/@handle") when the source has it. */
+  channelUrl?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -78,6 +80,32 @@ export async function fetchChannelLiveCandidates(
   return candidates;
 }
 
+/**
+ * YouTube search restricted to streams that are live right now (the
+ * `sp=EgJAAQ==` filter). Used as a fallback when a camera's host channel no
+ * longer carries a matching stream.
+ */
+export async function searchLiveVideos(query: string): Promise<LiveVideoInfo[]> {
+  const url =
+    "https://www.youtube.com/results?search_query=" +
+    encodeURIComponent(query) +
+    "&sp=EgJAAQ%253D%253D";
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      accept: "text/html",
+      "accept-language": "en-US,en;q=0.9",
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    console.warn("[youtube] search failed", response.status);
+    return [];
+  }
+  const initialData = extractJson(await response.text(), "ytInitialData");
+  return initialData ? findLiveRenderer(initialData) : [];
+}
+
 function extractJson(html: string, key: string) {
   const pattern = new RegExp(
     `${key}\\s*=\\s*(\\{[\\s\\S]+?\\})\\s*;`,
@@ -104,10 +132,10 @@ function findLiveRenderer(raw: unknown): LiveVideoInfo[] {
   // nesting, which also changes, walk the whole tree and accept either shape.
   const candidates: LiveVideoInfo[] = [];
   const seen = new Set<string>();
-  const push = (videoId: string, title: string) => {
+  const push = (videoId: string, title: string, channelUrl?: string) => {
     if (!seen.has(videoId)) {
       seen.add(videoId);
-      candidates.push({ videoId, title });
+      candidates.push(channelUrl ? { videoId, title, channelUrl } : { videoId, title });
     }
   };
 
@@ -123,7 +151,7 @@ function findLiveRenderer(raw: unknown): LiveVideoInfo[] {
     if (isRecord(renderer)) {
       const videoId = getString(renderer["videoId"]);
       if (videoId && hasLiveBadge(renderer)) {
-        push(videoId, extractTitle(renderer));
+        push(videoId, extractTitle(renderer), extractChannelUrl(renderer));
       }
     }
 
@@ -186,6 +214,17 @@ function extractLockupTitle(lockup: YoutubeNode): string {
 }
 
 function hasLiveBadge(renderer: YoutubeNode) {
+  // Search results flag live streams with a metadata badge...
+  const badges = renderer["badges"];
+  if (Array.isArray(badges)) {
+    const liveNow = badges.some((badge) => {
+      if (!isRecord(badge)) return false;
+      const meta = badge["metadataBadgeRenderer"];
+      return isRecord(meta) && meta["style"] === "BADGE_STYLE_TYPE_LIVE_NOW";
+    });
+    if (liveNow) return true;
+  }
+  // ...while channel grids (legacy markup) used a thumbnail overlay.
   const overlays = renderer["thumbnailOverlays"];
   if (!Array.isArray(overlays)) {
     return false;
@@ -201,6 +240,19 @@ function hasLiveBadge(renderer: YoutubeNode) {
     const badge = overlay["thumbnailOverlayBadgeRenderer"];
     return isRecord(badge) && badge["style"] === "LIVE";
   });
+}
+
+function extractChannelUrl(renderer: YoutubeNode): string | undefined {
+  const owner = renderer["ownerText"];
+  if (!isRecord(owner)) return undefined;
+  const runs = owner["runs"];
+  if (!Array.isArray(runs) || !isRecord(runs[0])) return undefined;
+  const nav = runs[0]["navigationEndpoint"];
+  if (!isRecord(nav)) return undefined;
+  const browse = nav["browseEndpoint"];
+  if (!isRecord(browse)) return undefined;
+  const base = getString(browse["canonicalBaseUrl"]);
+  return base ? `https://www.youtube.com${base}` : undefined;
 }
 
 function extractTitle(renderer: YoutubeNode) {
@@ -320,12 +372,18 @@ export function calculatePlaceMatch(
   candidateTitle: string
 ): number {
   const candidate = expandSynonyms(titleKeywords(candidateTitle));
+  // Multi-camera tours and "top N webcams" compilations mention many places;
+  // they are never the fixed view a camera row describes.
+  const compilation = /\b(tour|webcams|cameras|compilation|around the world|top \d+)\b/i.test(
+    candidateTitle
+  );
+  const penalty = compilation ? 0.5 : 1;
   const nameScore = keywordCoverage(placeName, candidate);
   // The city only adds confidence once the place name itself half-matches;
   // otherwise any stream in the same city ("Chicago") would clear the bar.
-  if (!city || nameScore < 0.5) return 0.7 * nameScore;
+  if (!city || nameScore < 0.5) return penalty * 0.7 * nameScore;
   const cityScore = keywordCoverage(city, candidate);
-  return 0.7 * nameScore + 0.3 * cityScore;
+  return penalty * (0.7 * nameScore + 0.3 * cityScore);
 }
 
 export function calculateSmartSimilarity(reference: string, candidate: string): number {

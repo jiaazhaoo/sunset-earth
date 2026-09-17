@@ -70,7 +70,14 @@ the `workers.dev` hostname is disabled.
   two cameras the same stream, and caches each channel page per run.
 - Data cleanup: 156 links were probed from a workstation as ground truth;
   duplicate streams and cameras showing the wrong location were demoted and
-  re-matched. Result: 101 available cameras, all distinct streams.
+  re-matched.
+- `replace-link` now falls back to YouTube search (`<placename> <city> live
+  cam`, live-only filter) when the host channel has nothing, with a stricter
+  0.7 match bar, and moves `host_link` to the new channel. Streams whose owner
+  disabled embedding (`playableInEmbed=false`, player error 150) are rejected
+  server-side. `scripts/find-replacements.ts` dry-runs the same logic from a
+  workstation. Result: 124 available cameras, all distinct streams; the 32
+  still down have no live stream of that place anywhere on YouTube.
 
 ---
 

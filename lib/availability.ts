@@ -9,6 +9,7 @@ export type AvailabilityReason =
   | "oembed_forbidden"
   | "oembed_error"
   | "playability_blocked"
+  | "embed_blocked"
   | "unavailable_text"
   | "not_found"
   | "fetch_error"
@@ -98,7 +99,14 @@ async function checkYoutubeAvailability(
 
   const watchProbe = buildYoutubeWatchUrl(url);
   if (watchProbe) {
-    const playable = await fetchPlayabilityStatus(watchProbe, options);
+    const status = await fetchPlayabilityStatus(watchProbe, options);
+    const playable = status?.status ?? null;
+
+    // The owner disabled embedding: the stream is fine on youtube.com but the
+    // IFrame player reports error 150/101, so for us it is unavailable.
+    if (status?.playableInEmbed === false) {
+      return { available: false, reason: "embed_blocked" };
+    }
     // Treat LOGIN_REQUIRED as a soft warning, not a hard failure. YouTube often
     // returns this for age-restricted or region-locked videos even though they
     // still play in embedded mode with consent. We avoid marking the camera
@@ -202,9 +210,9 @@ async function fetchPlayabilityStatus(
       return null;
     }
     const data = JSON.parse(match[1]) as {
-      playabilityStatus?: { status?: string };
+      playabilityStatus?: { status?: string; playableInEmbed?: boolean };
     };
-    return data.playabilityStatus?.status ?? null;
+    return data.playabilityStatus ?? null;
   } catch (error) {
     console.warn("[availability] playability status parse failed", error);
     return null;
