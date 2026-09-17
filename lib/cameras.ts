@@ -87,6 +87,14 @@ export async function getCameraTagsMap(cameraIds: string[]): Promise<Map<string,
   return tagsMap;
 }
 
+/** Cameras whose link is currently believed playable. */
+export async function countAvailableCameras(): Promise<number> {
+  const row = await queryOne<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM camera_ytb WHERE link_available = 1`
+  );
+  return row?.n ?? 0;
+}
+
 export async function getRandomCamera() {
   const pool = (await listCameras(200)).filter(
     (camera) => camera.linkAvailable !== false

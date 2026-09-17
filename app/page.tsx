@@ -1,6 +1,11 @@
 import { CameraViewer } from "@/components/camera-viewer";
-import { GlobalTimeline } from "@/components/global-timeline";
-import { getCameraById, getRandomCamera } from "@/lib/cameras";
+import { SiteHeader } from "@/components/site-header";
+import { SunOverview } from "@/components/sun-overview";
+import {
+  countAvailableCameras,
+  getCameraById,
+  getRandomCamera,
+} from "@/lib/cameras";
 import { fetchAvailableRankings } from "@/lib/rankings";
 import type { CameraRecord } from "@/lib/cameras";
 
@@ -46,44 +51,32 @@ export default async function Home({ searchParams }: HomeProps) {
   let initialCamera: CameraRecord | null = null;
   if (params?.camera) {
     const camera = await getCameraById(params.camera);
-    // Only use this camera if its link is available
     if (camera && camera.linkAvailable !== false) {
       initialCamera = camera;
     }
   }
 
-  // Fallback to best-ranked camera
-  if (!initialCamera) {
-    initialCamera = await getBestCamera();
-  }
+  const [bestCamera, liveCount] = await Promise.all([
+    initialCamera ? Promise.resolve(initialCamera) : getBestCamera(),
+    countAvailableCameras().catch(() => null),
+  ]);
+  initialCamera = bestCamera;
 
   return (
-    <div className="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950">
-      <div className="flex min-h-screen items-center">
-        <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:px-8">
-          <header className="flex flex-col items-center gap-3 text-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-orange-500/30 bg-zinc-800/80 px-4 py-1.5 shadow-sm backdrop-blur-sm">
-              <div className="h-2 w-2 animate-pulse rounded-full bg-orange-400"></div>
-              <span className="text-xs font-medium uppercase tracking-[0.25em] text-orange-400">
-                Live Now
-              </span>
-            </div>
-
-            <h1 className="text-4xl font-bold leading-tight text-zinc-50 sm:text-5xl">
-              Catch sunsets around the globe<span className="bg-gradient-to-r from-orange-400 to-rose-400 bg-clip-text text-transparent"> in real time</span>
-            </h1>
-
-            <p className="max-w-2xl text-base text-zinc-400">
-              We surface the most cinematic live cameras so you can enjoy golden-hour views anytime.
-            </p>
-          </header>
-
-          <CameraViewer initialCamera={initialCamera} />
-        </main>
-      </div>
-
-      {/* Global Timeline Section */}
-      <GlobalTimeline />
-    </div>
+    <>
+      <SiteHeader liveCount={liveCount} />
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-4 pb-24 pt-5 sm:px-6 sm:pt-10">
+        <CameraViewer initialCamera={initialCamera} />
+        <SunOverview currentCameraId={initialCamera?.id ?? null} />
+      </main>
+      <footer className="border-t border-line">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-8 text-xs text-faint sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <p>
+            Cameras are ranked every few minutes by weather and distance to golden hour.
+          </p>
+          <p>Streams via YouTube · Forecasts via Open-Meteo</p>
+        </div>
+      </footer>
+    </>
   );
 }

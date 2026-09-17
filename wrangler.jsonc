@@ -24,6 +24,9 @@
   // Any pre-existing A/CNAME on these hostnames must be deleted first
   // (Cloudflare refuses to override externally managed records).
   "workers_dev": false,
+  // Keep per-version preview URLs so `opennextjs-cloudflare upload` can stage
+  // a build for review before `deploy` switches production traffic to it.
+  "preview_urls": true,
   "routes": [
     { "pattern": "sunset-earth.com", "custom_domain": true },
     { "pattern": "www.sunset-earth.com", "custom_domain": true }

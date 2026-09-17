@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { devToolsEnabled } from "@/lib/auth";
 import { listCameras } from "@/lib/cameras";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +23,11 @@ async function fetchAllCameras(batchSize = 200) {
 }
 
 export default async function AllCamerasPage() {
+  // Inspection grid that embeds every camera at once — dev tooling, not a
+  // public page.
+  if (!devToolsEnabled()) {
+    notFound();
+  }
   const cameras = await fetchAllCameras();
 
   return (
