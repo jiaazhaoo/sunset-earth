@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCameraById } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
-import { execute, fromBool, nowIso } from "@/lib/db";
+import { recordProbe } from "@/lib/linkHealth";
 
 // Browsers report playback failures here. A single client's failure is weak
 // evidence (autoplay policy, extensions, slow networks and embed restrictions
@@ -53,22 +53,15 @@ export async function POST(request: NextRequest) {
     }
 
     const verdict = await isCameraAvailable(camera);
-    // Record the check either way so repeated reports hit the cooldown.
-    await execute(
-      `UPDATE camera_ytb SET link_available = ?, last_check = ? WHERE camera_id = ?`,
-      fromBool(verdict.available),
-      nowIso(),
-      cameraId
-    );
+    // recordProbe writes last_check either way, so repeated reports hit the
+    // cooldown, and applies the same two-strike policy as the cron sweep.
+    const outcome = await recordProbe(camera, verdict);
 
     if (verdict.available) {
       return NextResponse.json({ updated: false, reason: "verified-ok" });
     }
-    console.log("[camera-availability] demoted", cameraId, {
-      errorCode,
-      reason: verdict.reason,
-    });
-    return NextResponse.json({ updated: true, reason: verdict.reason });
+    console.log("[camera-availability] report", cameraId, { errorCode, outcome, reason: verdict.reason });
+    return NextResponse.json({ updated: outcome === "demoted", outcome, reason: verdict.reason });
   } catch (error) {
     console.error("[api/camera-availability]", error);
     return NextResponse.json(

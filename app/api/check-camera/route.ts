@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/auth";
 import { isCameraAvailable } from "@/lib/availability";
+import { buildCameraStub } from "@/lib/cameras";
 
 type Payload = {
   embedUrl?: string;
@@ -22,24 +23,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Probe whatever URL the caller gave; the stub only needs embed/source.
     const availability = await isCameraAvailable({
+      ...buildCameraStub("probe"),
       id: camera.embedUrl,
-      name: "probe",
       embedUrl: camera.embedUrl,
       sourceUrl: camera.sourceUrl ?? camera.embedUrl,
-      lat: null,
-      lng: null,
-      timezone: null,
-      city: null,
-      country: null,
-      tags: [],
-      hostLink: null,
-      ytbTitle: null,
-      linkAvailable: true,
-      sunsetDelay: 0,
-      sunriseAdvance: 0,
-      lastCheck: null,
-      metadata: null,
     });
 
     return NextResponse.json(availability);

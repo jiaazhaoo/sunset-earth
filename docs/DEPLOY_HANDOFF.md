@@ -134,6 +134,24 @@ survive six months of neglect. Then open the site and confirm a camera plays.
 
 ---
 
+### Later the same day: probing pipeline and hygiene
+
+- Live YouTube probes moved out of `compute-rankings` (every 5 min, 74 s)
+  into the hourly `replace-link`, which now verifies every on-air camera
+  first and repairs the down ones second. `lib/linkHealth.ts` owns the
+  demotion policy: definitive YouTube verdicts demote at once, soft failures
+  need two strikes (`camera_ytb.consecutive_failures`, migration
+  `d1/migrations/0001_consecutive_failures.sql`). `compute-rankings` now
+  runs in ~5 s and trusts `link_available`.
+- Two scoring bugs fixed in `lib/client-ranking-v2.ts`: sun times were read
+  as UTC for `next_event_time`, and the daytime check paired tomorrow's
+  sunrise with today's sunset, scoring day-only cameras ~9 instead of ~94 in
+  the half hour before sunset. `lib/time.ts` is the single timezone parser.
+- Hygiene: ESLint scoped to source (10,211 → 0 problems), 48 vitest tests
+  (`npm test`), GitHub Actions CI, v1 ranking + its dev tool deleted, root
+  reports and one-off debug scripts archived, README rewritten for the
+  Cloudflare stack.
+
 ## Things that are likely to bite
 
 - **`npm install` script blocking.** Recent npm versions block postinstall
@@ -166,4 +184,4 @@ survive six months of neglect. Then open the site and confirm a camera plays.
 
 - `d1/README.md` — database setup, import, ad-hoc queries
 - `docs/CLOUDFLARE_MIGRATION_PLAN.md` — why each decision was made
-- `PROJECT_HEALTH_REVIEW.md` — the original restart assessment
+- `docs/archive/PROJECT_HEALTH_REVIEW.md` — the original restart assessment

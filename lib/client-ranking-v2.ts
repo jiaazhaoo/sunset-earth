@@ -11,7 +11,8 @@
  */
 
 import type { CameraMetadata, CameraTier } from './camera-metadata-types';
-import { parseCameraMetadata, getDefaultMetadata } from './camera-metadata-types';
+import { getDefaultMetadata } from './camera-metadata-types';
+import { parseDateInTimezone } from './time';
 import type { WeatherClassDetailed } from './weather-classification';
 import { classifyWeatherDetailed, getWeatherWeight } from './weather-classification';
 
@@ -81,7 +82,7 @@ export function scoreCameraWeather(
   const sunset = pickClosestTime(weather.daily?.sunset, nowMs, timezone);
 
   // 使用扩展的白天定义：日出前45分钟到日落后45分钟
-  const isDaytime = determineDaytimeExtended(sunrise, sunset, now);
+  const isDaytime = determineDaytimeExtended(weather.daily, now, timezone);
 
   const hourIndex = getHourlyIndex(weather, now);
   const weatherCode = getHourlyValue(weather.hourly?.weathercode, hourIndex) ??
@@ -133,7 +134,7 @@ export function scoreCameraWeather(
     now,
   });
 
-  const upcomingEvents = findUpcomingSolarEvents(weather, now, 2);
+  const upcomingEvents = findUpcomingSolarEvents(weather, now, 2, timezone);
   const nextEvent = upcomingEvents[0] ?? null;
   const followingEvent = upcomingEvents[1] ?? null;
 
@@ -339,20 +340,40 @@ function buildWindows({
 /**
  * 扩展的白天定义：日出前45分钟到日落后45分钟
  */
+/**
+ * Is `now` inside any day's extended daylight (sunrise − 45 min … sunset +
+ * 45 min)? Uses the sunrise/sunset *pairs* Open-Meteo returns per day. The
+ * old version took the sunrise and sunset each closest to `now`, which from
+ * mid-evening pairs tomorrow's sunrise with today's sunset and reports
+ * "night" for the half hour before sunset — exactly when day-only cameras
+ * were then penalised ×0.1.
+ */
 function determineDaytimeExtended(
-  sunrise: Date | null,
-  sunset: Date | null,
-  now: Date
+  daily: OpenMeteoResponse["daily"] | undefined,
+  now: Date,
+  timezone?: string
 ): boolean | null {
-  if (!sunrise || !sunset) {
+  const sunrises = daily?.sunrise ?? [];
+  const sunsets = daily?.sunset ?? [];
+  const days = Math.min(sunrises.length, sunsets.length);
+  if (!days) {
     return null;
   }
 
   const nowMs = now.getTime();
-  const dayStart = sunrise.getTime() - 45 * MINUTE;  // 日出前45分钟
-  const dayEnd = sunset.getTime() + 45 * MINUTE;     // 日落后45分钟
-
-  return nowMs >= dayStart && nowMs <= dayEnd;
+  let sawPair = false;
+  for (let i = 0; i < days; i++) {
+    const sunrise = parseDateInTimezone(sunrises[i], timezone);
+    const sunset = parseDateInTimezone(sunsets[i], timezone);
+    if (!sunrise || !sunset) continue;
+    sawPair = true;
+    const dayStart = sunrise.getTime() - 45 * MINUTE;  // 日出前45分钟
+    const dayEnd = sunset.getTime() + 45 * MINUTE;     // 日落后45分钟
+    if (nowMs >= dayStart && nowMs <= dayEnd) {
+      return true;
+    }
+  }
+  return sawPair ? false : null;
 }
 
 // ============================================================
@@ -586,132 +607,26 @@ function pickClosestTime(times: string[] | undefined, targetMs: number, timezone
   return closest;
 }
 
-/**
- * Parse date string in a specific timezone
- *
- * Open-Meteo返回的日期格式：
- * - 带timezone参数：返回该时区的本地时间（如 "2025-12-19T16:28"）
- * - 这个时间字符串表示的是该时区的本地时间，不是UTC
- *
- * 例如："2025-12-19T16:28" + timezone="Asia/Tokyo" → 表示东京时间16:28
- *
- * @param value ISO8601日期字符串（本地时间，无时区后缀）
- * @param timezone IANA时区名称（如 "Asia/Tokyo"）
- */
-function parseDateInTimezone(value: string | undefined | null, timezone?: string): Date | null {
-  if (!value) return null;
-
-  // 如果已经有时区信息（Z或+/-偏移），直接解析
-  if (value.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(value)) {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-
-  // 对于Open-Meteo返回的本地时间字符串（无时区后缀）
-  // 策略：将本地时间字符串解释为指定时区的时间，然后转换为UTC Date对象
-  if (timezone) {
-    try {
-      // 解析日期字符串的各个部分
-      const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(value);
-      if (!match) {
-        return null;
-      }
-
-      const [, year, month, day, hour = '00', minute = '00', second = '00'] = match;
-
-      // 构造一个时间字符串，表示目标时区的本地时间
-      const localTimeStr = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
-
-      // 使用一个技巧：创建一个Date对象，然后通过Intl.DateTimeFormat获取时区偏移
-      // 步骤1：假设这个时间是UTC时间，创建一个Date对象
-      const utcDate = new Date(`${localTimeStr}Z`);
-
-      // 步骤2：使用DateTimeFormat将这个UTC时间格式化为目标时区的本地时间
-      const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-        timeZoneName: 'short',
-      });
-
-      // 步骤3：通过比较来计算时区偏移
-      // 原理：如果原始字符串是"12:00"，我们希望它表示timezone的12:00
-      // 我们创建了UTC的12:00，然后看这个UTC时间在timezone里显示为几点
-      // 差值就是时区偏移
-
-      // 创建一个参考时间：UTC 00:00
-      const refUtc = new Date(`${year}-${month}-${day}T00:00:00Z`);
-      const refFormatted = formatter.format(refUtc);
-
-      // 从格式化的字符串中提取时间部分
-      const refMatch = /(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}):(\d{2}):(\d{2})/.exec(refFormatted);
-
-      if (!refMatch) {
-        // 无法解析，回退到添加Z的方式
-        const fallbackDate = new Date(`${value}Z`);
-        return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
-      }
-
-      const [, refMonth, refDay, refYear, refHour, refMin, refSec] = refMatch;
-      const refLocal = new Date(
-        Number.parseInt(refYear),
-        Number.parseInt(refMonth) - 1,
-        Number.parseInt(refDay),
-        Number.parseInt(refHour),
-        Number.parseInt(refMin),
-        Number.parseInt(refSec)
-      );
-
-      // 计算偏移量（毫秒）
-      const offset = refLocal.getTime() - refUtc.getTime();
-
-      // 应用偏移：我们的本地时间 - 偏移 = UTC时间
-      // 例如：东京12:00 - 9小时 = UTC 03:00
-      const resultDate = new Date(utcDate.getTime() - offset);
-
-      return Number.isNaN(resultDate.getTime()) ? null : resultDate;
-    } catch (e) {
-      console.error('[parseDateInTimezone] Error parsing date:', value, 'in timezone:', timezone, e);
-      // 回退：假设是UTC
-      const fallbackDate = new Date(`${value}Z`);
-      return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
-    }
-  }
-
-  // 如果没有时区信息，假设是UTC
-  const date = new Date(value.endsWith('Z') ? value : `${value}Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-/**
- * @deprecated Use parseDateInTimezone instead
- */
-function parseUtcDate(value: string | undefined | null) {
-  return parseDateInTimezone(value, undefined);
-}
-
 function findUpcomingSolarEvents(
   weather: OpenMeteoResponse,
   now: Date,
-  count: number
+  count: number,
+  timezone?: string
 ): SolarEvent[] {
   const events: SolarEvent[] = [];
   const sunrises = weather.daily?.sunrise ?? [];
   const sunsets = weather.daily?.sunset ?? [];
 
+  // Open-Meteo's daily times are wall-clock in the camera's zone; reading
+  // them as UTC (as this once did) put next_event_time off by the offset.
   for (const entry of sunrises) {
-    const date = parseUtcDate(entry);
+    const date = parseDateInTimezone(entry, timezone);
     if (date) {
       events.push({ type: "sunrise", time: date });
     }
   }
   for (const entry of sunsets) {
-    const date = parseUtcDate(entry);
+    const date = parseDateInTimezone(entry, timezone);
     if (date) {
       events.push({ type: "sunset", time: date });
     }

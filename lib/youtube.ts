@@ -435,7 +435,7 @@ export function calculateSmartSimilarity(reference: string, candidate: string): 
   const expandWithSynonyms = (keywords: string[]) => {
     const expanded = new Set(keywords);
     for (const word of keywords) {
-      for (const [key, synonyms] of Object.entries(locationSynonyms)) {
+      for (const synonyms of Object.values(locationSynonyms)) {
         if (synonyms.includes(word)) {
           synonyms.forEach(syn => expanded.add(syn));
         }

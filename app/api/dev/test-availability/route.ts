@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- ad-hoc debug probe, prod: 404 */
 import { NextRequest, NextResponse } from "next/server";
 import { devToolsEnabled, devToolsDisabledResponse } from "@/lib/auth";
 import { getCameraById } from "@/lib/cameras";
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest) {
                 errorScreen: playerData.playabilityStatus?.errorScreen,
               };
               console.log("\nPlayer Response:", htmlTest.playerResponse);
-            } catch (e) {
+            } catch {
               console.log("Failed to parse ytInitialPlayerResponse");
               htmlTest.playerResponse = "parse_failed";
             }

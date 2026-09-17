@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS camera_ytb (
   sunset_delay     REAL DEFAULT 0,    -- minutes to extend the post-sunset window
   sunrise_advance  REAL DEFAULT 0,    -- minutes to extend the pre-sunrise window
   last_check       TEXT,              -- ISO-8601 UTC
-  camera_metadata  TEXT               -- JSON document
+  camera_metadata  TEXT,              -- JSON document
+  consecutive_failures INTEGER NOT NULL DEFAULT 0 -- soft probe strikes, see lib/linkHealth.ts
 );
 
 CREATE INDEX IF NOT EXISTS idx_camera_ytb_available

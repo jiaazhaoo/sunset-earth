@@ -1,0 +1,107 @@
+{
+ "contents": {
+  "twoColumnSearchResultsRenderer": {
+   "primaryContents": {
+    "sectionListRenderer": {
+     "contents": [
+      {
+       "itemSectionRenderer": {
+        "contents": [
+         {
+          "videoRenderer": {
+           "videoId": "77akujLn4k8",
+           "title": {
+            "runs": [
+             {
+              "text": "EarthCam Live - Western Wall  (Jerusalem, Israel)"
+             }
+            ]
+           },
+           "badges": [
+            {
+             "metadataBadgeRenderer": {
+              "style": "BADGE_STYLE_TYPE_LIVE_NOW",
+              "label": "LIVE"
+             }
+            }
+           ],
+           "ownerText": {
+            "runs": [
+             {
+              "text": "EarthCam",
+              "navigationEndpoint": {
+               "browseEndpoint": {
+                "canonicalBaseUrl": "/@earthcam"
+               }
+              }
+             }
+            ]
+           }
+          }
+         },
+         {
+          "videoRenderer": {
+           "videoId": "zp6LNSoq000",
+           "title": {
+            "runs": [
+             {
+              "text": "Western Wall, Temple Archaeological Park"
+             }
+            ]
+           },
+           "badges": [
+            {
+             "metadataBadgeRenderer": {
+              "style": "BADGE_STYLE_TYPE_LIVE_NOW",
+              "label": "LIVE"
+             }
+            }
+           ],
+           "ownerText": {
+            "runs": [
+             {
+              "text": "Mt. of Olives Prayer Bridge",
+              "navigationEndpoint": {
+               "browseEndpoint": {
+                "canonicalBaseUrl": "/@Mt.ofOlivesPrayerBridge"
+               }
+              }
+             }
+            ]
+           }
+          }
+         },
+         {
+          "videoRenderer": {
+           "videoId": "LMHUcDktP-w",
+           "title": {
+            "runs": [
+             {
+              "text": "The Western Wall - Main Plaza \ud83d\udd34 Live Cam \ud83c\udfac | \u05de\u05e6\u05dc\u05de\u05d5\u05ea \u05d4\u05db\u05d5\u05ea\u05dc"
+             }
+            ]
+           },
+           "badges": [],
+           "ownerText": {
+            "runs": [
+             {
+              "text": "\u05d4\u05db\u05d5\u05ea\u05dc \u05d4\u05de\u05e2\u05e8\u05d1\u05d9 ",
+              "navigationEndpoint": {
+               "browseEndpoint": {
+                "canonicalBaseUrl": "/@The.Western.Wall.TheKotel"
+               }
+              }
+             }
+            ]
+           }
+          }
+         }
+        ]
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

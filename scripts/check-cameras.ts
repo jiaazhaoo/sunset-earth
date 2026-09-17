@@ -1,29 +1,7 @@
 import { isCameraAvailable } from "@/lib/availability";
-import type { CameraRecord } from "@/lib/cameras";
+import { buildCameraStub } from "@/lib/cameras";
 
-function makeCamera(videoId: string, title: string) {
-  const params = "autoplay=1&mute=1&rel=0&playsinline=1";
-  const camera: CameraRecord = {
-    id: videoId,
-    name: title,
-    embedUrl: `https://www.youtube.com/embed/${videoId}?${params}`,
-    sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
-    lat: null,
-    lng: null,
-    timezone: null,
-    city: null,
-    country: null,
-    tags: [],
-    hostLink: null,
-    ytbTitle: title,
-    linkAvailable: true,
-    sunsetDelay: 0,
-    sunriseAdvance: 0,
-    lastCheck: null,
-    metadata: null,
-  };
-  return camera;
-}
+const makeCamera = buildCameraStub;
 
 async function main() {
   const targets = [

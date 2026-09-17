@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     // Execute with task lock to prevent concurrent execution
     const lockResult = await withTaskLock(
       "weather-cache",
-      async () => executeWeatherCache(request),
+      async () => executeWeatherCache(),
       { ttlSeconds: 600, lockedBy: "weather-cache-cron" }
     );
 
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function executeWeatherCache(request: NextRequest) {
+async function executeWeatherCache() {
   let offset = 0;
   const summary = {
     processed: 0,

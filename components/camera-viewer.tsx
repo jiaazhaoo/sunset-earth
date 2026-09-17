@@ -10,9 +10,33 @@ import {
   formatZoneAbbr,
 } from "@/lib/sun-format";
 
+/** The slice of the YouTube IFrame API this component touches. */
+type YTPlayer = {
+  destroy(): void;
+  mute?(): void;
+  playVideo?(): void;
+  getPlayerState?(): number;
+};
+
+type YTNamespace = {
+  Player: new (
+    element: HTMLElement,
+    options: {
+      videoId: string;
+      playerVars?: Record<string, string | number>;
+      events?: {
+        onReady?: () => void;
+        onError?: (event: { data: number }) => void;
+        onStateChange?: (event: { data: number }) => void;
+      };
+    }
+  ) => YTPlayer;
+  PlayerState: { PLAYING: number };
+};
+
 declare global {
   interface Window {
-    YT: any;
+    YT: YTNamespace;
     onYouTubeIframeAPIReady: () => void;
   }
 }
@@ -60,7 +84,7 @@ function loadYouTubeAPI() {
       script.src = "https://www.youtube.com/iframe_api";
       script.async = true;
       document.body.appendChild(script);
-      (window as any).onYouTubeIframeAPIReady = () => resolve();
+      window.onYouTubeIframeAPIReady = () => resolve();
     });
   }
   return ytApiPromise;
@@ -96,7 +120,7 @@ function VideoFrame({
   onStreamError: (errorCode?: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<YTPlayer | null>(null);
   const fallbackTimer = useRef<NodeJS.Timeout | null>(null);
   const videoId = extractYoutubeId(camera.embedUrl || camera.sourceUrl);
 

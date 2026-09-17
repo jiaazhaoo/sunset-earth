@@ -1,7 +1,6 @@
 import type { CameraRecord } from "@/lib/cameras";
 
 const TTL_MS = 15 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 10 * 1000; // 10 seconds timeout for each fetch
 
 export type AvailabilityReason =
   | "ok"
@@ -24,37 +23,13 @@ export type AvailabilityOptions = {
   withConsent?: boolean;
 };
 
+// Per-isolate memo. On Workers this does not survive between cron
+// invocations; it exists so one replace-link run probing 20 cameras on the
+// same channel checks each candidate stream once, not 20 times.
 const availabilityCache = new Map<
   string,
   { result: AvailabilityResult; fetchedAt: number }
 >();
-
-/**
- * Fetch with timeout protection
- */
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit = {},
-  timeoutMs: number = FETCH_TIMEOUT_MS
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Fetch timeout after ${timeoutMs}ms`);
-    }
-    throw error;
-  }
-}
 
 export async function isCameraAvailable(
   camera: CameraRecord,

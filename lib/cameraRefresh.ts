@@ -1,4 +1,4 @@
-import { getCameraById, type CameraRecord } from "@/lib/cameras";
+import { buildCameraStub, getCameraById, type CameraRecord } from "@/lib/cameras";
 import { execute, query, nowIso } from "@/lib/db";
 import { isCameraAvailable } from "@/lib/availability";
 import {
@@ -232,28 +232,4 @@ function extractVideoId(sourceUrl: string | null | undefined) {
     return null;
   }
   return null;
-}
-
-function buildCameraStub(videoId: string, title?: string | null): CameraRecord {
-  const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&playsinline=1`;
-  const sourceUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  return {
-    id: videoId,
-    name: title ?? videoId,
-    embedUrl,
-    sourceUrl,
-    lat: null,
-    lng: null,
-    timezone: null,
-    city: null,
-    country: null,
-    tags: [],
-    hostLink: null,
-    ytbTitle: title ?? null,
-    linkAvailable: true,
-    sunsetDelay: 0,
-    sunriseAdvance: 0,
-    lastCheck: null,
-    metadata: null,
-  };
 }

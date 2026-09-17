@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { devToolsEnabled, devToolsDisabledResponse } from "@/lib/auth";
-import type { CameraRecord } from "@/lib/cameras";
+import { buildCameraStub, type CameraRecord } from "@/lib/cameras";
 import { isCameraAvailable } from "@/lib/availability";
 
 export const dynamic = "force-dynamic";
@@ -16,25 +16,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Create a mock camera object
-  const mockCamera: CameraRecord = {
-    id: "test",
-    name: "Test Camera",
-    embedUrl: url,
-    sourceUrl: url,
-    lat: null,
-    lng: null,
-    timezone: null,
-    city: null,
-    country: null,
-    tags: [],
-    hostLink: null,
-    ytbTitle: null,
-    linkAvailable: true,
-    sunsetDelay: 0,
-    sunriseAdvance: 0,
-    lastCheck: null,
-    metadata: null,
-  };
+  const mockCamera: CameraRecord = { ...buildCameraStub("test"), embedUrl: url, sourceUrl: url };
 
   console.log(`\n=== Testing availability detection for: ${url} ===\n`);
 

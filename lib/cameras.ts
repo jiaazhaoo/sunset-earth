@@ -1,8 +1,9 @@
 import tzLookup from "tz-lookup";
 import { query, queryOne, placeholders, toBool, parseJson } from "@/lib/db";
+import type { CameraMetadata } from "@/lib/camera-metadata-types";
 
 const CAMERA_COLUMNS =
-  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available,sunset_delay,sunrise_advance,last_check,camera_metadata";
+  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available,sunset_delay,sunrise_advance,last_check,camera_metadata,consecutive_failures";
 
 export type CameraRow = {
   camera_id: number | string;
@@ -22,6 +23,7 @@ export type CameraRow = {
   sunset_delay: number | string | null;
   sunrise_advance: number | string | null;
   last_check: string | null;
+  consecutive_failures: number | null;
   /** SQLite stores JSON as TEXT. */
   camera_metadata: string | null;
 };
@@ -43,7 +45,9 @@ export type CameraRecord = {
   sunsetDelay: number;
   sunriseAdvance: number;
   lastCheck: string | null;
-  metadata: any;
+  /** Soft probe failures in a row; see lib/linkHealth.ts. */
+  consecutiveFailures: number;
+  metadata: CameraMetadata | null;
 };
 
 export async function listCameras(limit = 200, offset = 0) {
@@ -85,6 +89,33 @@ export async function getCameraTagsMap(cameraIds: string[]): Promise<Map<string,
   }
 
   return tagsMap;
+}
+
+/**
+ * A throwaway CameraRecord for probing a bare YouTube video that is not (yet)
+ * a row in camera_ytb — candidate replacement streams, ad-hoc checks.
+ */
+export function buildCameraStub(videoId: string, title?: string | null): CameraRecord {
+  return {
+    id: videoId,
+    name: title ?? videoId,
+    embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&playsinline=1`,
+    sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+    lat: null,
+    lng: null,
+    timezone: null,
+    city: null,
+    country: null,
+    tags: [],
+    hostLink: null,
+    ytbTitle: title ?? null,
+    linkAvailable: true,
+    sunsetDelay: 0,
+    sunriseAdvance: 0,
+    lastCheck: null,
+    consecutiveFailures: 0,
+    metadata: null,
+  };
 }
 
 /** Cameras whose link is currently believed playable. */
@@ -132,7 +163,8 @@ function mapCameraRow(row: CameraRow): CameraRecord {
     sunsetDelay: toNumber(row.sunset_delay) ?? 0,
     sunriseAdvance: toNumber(row.sunrise_advance) ?? 0,
     lastCheck: row.last_check ?? null,
-    metadata: parseJson(row.camera_metadata),
+    consecutiveFailures: toNumber(row.consecutive_failures) ?? 0,
+    metadata: parseJson<CameraMetadata>(row.camera_metadata),
   };
 }
 

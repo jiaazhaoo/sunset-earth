@@ -7,7 +7,10 @@ This directory contains comprehensive documentation for the Sunset Earth project
 ## Quick Links
 
 ### For New Developers
-1. Start with [PROJECT_ORIENTATION.md](../PROJECT_ORIENTATION.md) - High-level project overview
+1. Start with the [README](../README.md) - current architecture (Cloudflare Workers + D1)
+   and [DEPLOY_HANDOFF.md](DEPLOY_HANDOFF.md) - rollout notes. `archive/` holds the
+   pre-migration reports (Vercel/Supabase era); deployment guides under
+   `deployment/` predate the migration too.
 2. Review [Architecture Refactor](architecture/ARCHITECTURE_REFACTOR.md) - Current system design
 3. Check [Deployment Guide](deployment/DEPLOYMENT_GUIDE.md) - Setup instructions
 
@@ -128,6 +131,6 @@ When adding new features:
 ## Support
 
 For questions or issues:
-- Review [PROJECT_ORIENTATION.md](../PROJECT_ORIENTATION.md)
+- Review [PROJECT_ORIENTATION.md](archive/PROJECT_ORIENTATION.md) (historical)
 - Check existing documentation in this directory
 - Examine similar implementations in the codebase

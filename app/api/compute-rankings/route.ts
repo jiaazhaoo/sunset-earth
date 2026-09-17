@@ -3,8 +3,8 @@ import { requireCronSecret } from "@/lib/auth";
 import { listCameras } from "@/lib/cameras";
 import { getCachedWeatherSnapshot } from "@/lib/weather";
 import { scoreCameraWeather } from "@/lib/client-ranking-v2";
-import { isCameraAvailable } from "@/lib/availability";
 import { execute, fromBool } from "@/lib/db";
+import { parseDateInTimezone } from "@/lib/time";
 import { isTaskLocked, withTaskLock } from "@/lib/task-lock";
 
 export const maxDuration = 300;
@@ -85,6 +85,11 @@ async function executeComputeRankings() {
       summary.processed++;
 
       try {
+        // Availability is whatever link_available says. Live YouTube probes
+        // happen in the hourly replace-link sweep (lib/linkHealth.ts), not
+        // here: this runs every five minutes and used to re-probe every
+        // camera each time.
+        //
         // Cameras we cannot score still get a ranking row marked unavailable:
         // otherwise a camera demoted since the last run keeps its old
         // available=1 row, inflating counts and rotation until it is repaired.
@@ -106,25 +111,6 @@ async function executeComputeRankings() {
             id: camera.id,
             status: "skipped",
             reason: skipReason,
-          });
-          continue;
-        }
-
-        // Check availability (uses cache if available)
-        const availability = await isCameraAvailable(camera);
-        if (!availability.available) {
-          // Store as unavailable
-          await upsertRanking({
-            cameraId: camera.id,
-            score: 0,
-            available: false,
-            computedAt: now,
-          });
-          summary.skipped++;
-          summary.details.push({
-            id: camera.id,
-            status: "skipped",
-            reason: `unavailable-${availability.reason}`,
           });
           continue;
         }
@@ -265,54 +251,4 @@ async function upsertRanking(data: RankingData) {
     fromBool(data.available),
     data.computedAt.toISOString()
   );
-}
-
-function parseDateInTimezone(value: string | undefined | null, timezone?: string) {
-  if (!value) return null;
-  if (value.endsWith("Z") || /[+-]\\d{2}:\\d{2}$/.test(value)) {
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  if (!timezone) {
-    const d = new Date(`${value}Z`);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  try {
-    const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(value);
-    if (!match) return null;
-    const [, year, month, day, hour = "00", minute = "00", second = "00"] = match;
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-      timeZoneName: "short",
-    });
-    const refUtc = new Date(`${year}-${month}-${day}T00:00:00Z`);
-    const refFormatted = formatter.format(refUtc);
-    const refMatch = /(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}):(\d{2}):(\d{2})/.exec(
-      refFormatted
-    );
-    const refLocal = refMatch
-      ? new Date(
-          Number.parseInt(refMatch[3]),
-          Number.parseInt(refMatch[1]) - 1,
-          Number.parseInt(refMatch[2]),
-          Number.parseInt(refMatch[4]),
-          Number.parseInt(refMatch[5]),
-          Number.parseInt(refMatch[6])
-        )
-      : null;
-    const offset = refLocal ? refLocal.getTime() - refUtc.getTime() : 0;
-    const utcDate = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
-    const result = new Date(utcDate.getTime() - offset);
-    return Number.isNaN(result.getTime()) ? null : result;
-  } catch (e) {
-    const fallback = new Date(`${value}Z`);
-    return Number.isNaN(fallback.getTime()) ? null : fallback;
-  }
 }

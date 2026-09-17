@@ -18,7 +18,7 @@ import {
   searchLiveVideos,
   type LiveVideoInfo,
 } from "../lib/youtube";
-import type { CameraRecord } from "../lib/cameras";
+import { buildCameraStub as stub } from "../lib/cameras";
 
 type Row = {
   camera_id: string;
@@ -46,16 +46,6 @@ function videoId(link: string | null): string | null {
   return m ? m[1] : null;
 }
 
-function stub(id: string, title: string): CameraRecord {
-  return {
-    id, name: title, title,
-    embedUrl: `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&rel=0&playsinline=1`,
-    sourceUrl: `https://www.youtube.com/watch?v=${id}`,
-    lat: null, lng: null, timezone: null, city: null, country: null, tags: [],
-    hostLink: null, ytbTitle: title, linkAvailable: true, sunsetDelay: 0,
-    sunriseAdvance: 0, lastCheck: null, metadata: null,
-  } as unknown as CameraRecord;
-}
 
 async function main() {
   const ids = process.argv.slice(2);

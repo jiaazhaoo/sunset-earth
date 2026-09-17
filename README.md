@@ -1,155 +1,96 @@
 # Sunset Earth
 
-A Next.js application that intelligently displays live camera feeds showing beautiful sunrises and sunsets from around the world, powered by weather-based ranking.
+Live at **https://sunset-earth.com**. A Next.js site that shows the YouTube
+live camera most likely to be in a good golden hour right now, picked from a
+curated list of ~150 cameras by weather and distance to sunrise/sunset.
 
-## Features
+Runs on Cloudflare Workers (via OpenNext) with a D1 database. No Vercel, no
+Supabase — see [`docs/CLOUDFLARE_MIGRATION_PLAN.md`](docs/CLOUDFLARE_MIGRATION_PLAN.md)
+for the why and [`docs/DEPLOY_HANDOFF.md`](docs/DEPLOY_HANDOFF.md) for what
+was done on rollout.
 
-- **Intelligent Camera Ranking**: Weather-based scoring system that ranks cameras by their sunset/sunrise quality
-- **Automatic Link Refresh**: Smart YouTube link replacement with multi-tier similarity matching
-- **Real-time Availability Checking**: Monitors camera feed health and automatically replaces unavailable streams
-- **Scheduled Automation**: Cron-driven tasks for weather caching, ranking computation, and link maintenance
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- Cloudflare account (Workers + D1)
-
-### Installation
+## Develop
 
 ```bash
 npm install
+npm run cf-typegen     # binding types (worker-configuration.d.ts, gitignored)
+npm run dev            # Next dev server; reads bindings via getCloudflareContext()
+npm test               # vitest: matching, formatting, scoring
+npm run lint
 ```
 
-### Development
+`.dev.vars` (gitignored) holds `CRON_SECRET`; the same value is set on the
+Worker with `wrangler secret put CRON_SECRET`. To preview a production build
+against the real database: `npx opennextjs-cloudflare build && npx wrangler dev --remote`.
+
+## Deploy
 
 ```bash
-npm run dev
+npm run deploy         # opennextjs-cloudflare build && deploy
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the application.
+`wrangler.jsonc` declares the D1 binding (`DB`), the custom domains, and three
+Cron Triggers that `worker.ts` dispatches to API routes:
 
-### Environment Variables
+| Schedule | Route | Purpose |
+| --- | --- | --- |
+| `*/5 * * * *` | `/api/compute-rankings` | Score every available camera from cached weather |
+| `0 */3 * * *` | `/api/weather-cache` | Refresh Open-Meteo forecasts |
+| `0 * * * *` | `/api/replace-link` | Probe cameras on air; repair the ones that are down |
 
-Copy `.env.example` to `.env.local` and fill in:
+The cron routes iterate every camera and need the paid Workers plan
+(`limits.cpu_ms` in `wrangler.jsonc`); the site itself would run on free.
 
-```
-# Required in production — protects the cron/task API routes
-CRON_SECRET=generate-a-long-random-string
+## How the camera pool stays healthy
 
-# Public base URL of the deployment (used for internal route-to-route calls
-# and by the Cloudflare scheduled() cron handler)
-SITE_URL=https://your-app.workers.dev
-```
+Everything that touches `camera_ytb.link_available` goes through
+[`lib/linkHealth.ts`](lib/linkHealth.ts):
 
-The database is a Cloudflare D1 binding (`DB`) configured in `wrangler.jsonc`,
-not a connection string — see [d1/README.md](d1/README.md).
+- **Probe** ([`lib/availability.ts`](lib/availability.ts)): reads YouTube's
+  own `playabilityStatus` from the watch page, including `playableInEmbed`
+  (the IFrame player's error 150). Definitive verdicts demote immediately;
+  soft failures (timeouts, bot-check pages) need two strikes in a row.
+- **Repair** ([`lib/cameraRefresh.ts`](lib/cameraRefresh.ts)): for a camera
+  that is down, look at its host channel's `/streams` tab, then fall back to a
+  YouTube search for `<placename> <city> live cam`. Candidates are scored
+  against the curated place name + city
+  ([`calculatePlaceMatch`](lib/youtube.ts)) — never against `ytb_title`,
+  which is just whatever the camera last showed. No two cameras may share a
+  stream. On a search hit `host_link` moves to the new channel.
+- **Viewer reports** (`POST /api/camera-availability`): a real player error
+  code triggers a server-side re-probe through the same policy. Timeouts are
+  handled client-side only.
 
-> Note: on Cloudflare Workers, secrets are injected per-request — set them with
-> `wrangler secret put <NAME>` (not in `wrangler.jsonc`, which is committed).
+`npx tsx scripts/find-replacements.ts` dry-runs the repair logic against the
+live database from a workstation without writing anything.
 
-## Architecture
-
-### Key Components
-
-- **Camera Ranking System** ([lib/weather.ts](lib/weather.ts), [lib/client-ranking-v2.ts](lib/client-ranking-v2.ts)): Scores cameras based on weather conditions, time until sunset/sunrise, and visibility. `client-ranking-v2` is the production scorer used by `compute-rankings`.
-- **Availability Detection** ([lib/availability.ts](lib/availability.ts)): YouTube playability checking with multiple detection methods.
-- **Smart Link Refresh** ([lib/cameraRefresh.ts](lib/cameraRefresh.ts)): Three-tier similarity matching (exact, smart, relaxed) for finding replacement streams.
-- **Distributed Task Locks** ([lib/task-lock.ts](lib/task-lock.ts)): Prevents concurrent cron executions across serverless instances.
-
-### Cron Jobs (Cloudflare Cron Triggers)
-
-Schedules live in [wrangler.jsonc](wrangler.jsonc) `triggers.crons`; the custom
-[worker.ts](worker.ts) `scheduled()` handler dispatches each cron expression to
-the matching API route:
-
-| Schedule       | Route                    | Purpose                                   |
-| -------------- | ------------------------ | ----------------------------------------- |
-| `0 * * * *`    | `/api/replace-link`      | Hourly: revalidate & replace broken links |
-| `0 */3 * * *`  | `/api/weather-cache`     | Every 3h: refresh weather/sun caches      |
-| `*/5 * * * *`  | `/api/compute-rankings`  | Every 5 min: recompute scores             |
-
-These routes are protected by `CRON_SECRET`; the scheduled handler sends it as a
-Bearer token.
-
-### Database Schema
-
-Cloudflare D1 (SQLite). Four tables:
-- `camera_ytb`: Camera metadata and YouTube links — the only irreplaceable data
-- `camera_rankings`: Computed scores and availability status (cron rebuilds it)
-- `camera_weather_cache`: Cached Open-Meteo snapshots (cron refills it)
-- `task_locks`: Distributed lock mechanism for cron jobs
-
-Schema and setup/import instructions: [d1/schema.sql](d1/schema.sql) and
-[d1/README.md](d1/README.md).
-
-## Project Structure
+## Layout
 
 ```
-/app                    # Next.js app directory
-  /api                  # API routes (compute-rankings, weather-cache, replace-link, ...)
-/lib                    # Core libraries (weather, availability, cameraRefresh, task-lock, ...)
-/components             # Client components (camera-viewer, realtime-sidebar, ...)
-/d1                     # D1 schema, import tooling and DB docs
-/scripts                # Utility & maintenance scripts
-/docs                   # Architecture & development notes
-worker.ts               # Cloudflare Worker entrypoint (fetch + scheduled/cron)
-wrangler.jsonc          # Cloudflare Workers config (bindings, cron triggers)
-open-next.config.ts     # OpenNext Cloudflare adapter config
+app/                Next.js app router
+  page.tsx          Homepage: best camera, stats, "up next" rail, timeline
+  api/              Cron routes, viewer endpoints, /api/dev/* (prod: 404)
+components/         camera-viewer, sun-overview, site-header, use-now
+lib/
+  db.ts             D1 access (env.DB)
+  cameras.ts        camera_ytb rows → CameraRecord
+  rankings.ts       camera_rankings reads
+  client-ranking-v2 Scoring algorithm used by compute-rankings
+  weather*.ts       Open-Meteo cache + classification
+  availability.ts   YouTube probe
+  youtube.ts        Channel/search crawlers, place matching
+  cameraRefresh.ts  Replacement pipeline
+  linkHealth.ts     Demotion/restoration policy
+  sun-format.ts     Pure formatters for sun phases and clocks
+  auth.ts           CRON_SECRET guard, dev-tools gate
+d1/                 schema.sql, migrations/, seed, CSV → SQL generator
+worker.ts           Cloudflare entry: OpenNext fetch + scheduled()
+scripts/            Maintenance tools (archive/ = historical, not compiled)
+docs/               Design notes; archive/ holds pre-migration reports
 ```
 
-## Deployment (Cloudflare Workers)
+## Data
 
-This project deploys to **Cloudflare Workers** via the
-[OpenNext](https://opennext.js.org/cloudflare) adapter (`@opennextjs/cloudflare`).
-
-### One-time setup
-
-```bash
-# Authenticate wrangler with your Cloudflare account
-npx wrangler login
-
-# Set secrets (do NOT put these in wrangler.jsonc)
-npx wrangler secret put CRON_SECRET
-
-# Create the D1 database and load the schema — see d1/README.md
-npx wrangler d1 create sunset-earth
-npx wrangler d1 execute sunset-earth --remote --file=d1/schema.sql
-```
-
-Set `SITE_URL` in `wrangler.jsonc` `vars` to your deployed URL (or a custom domain).
-
-### Build & deploy
-
-```bash
-# Regenerate Cloudflare types after changing wrangler.jsonc
-npm run cf-typegen
-
-# Local preview in the workerd runtime
-npm run preview
-
-# Build + deploy to Cloudflare
-npm run deploy
-```
-
-### Notes / constraints
-
-- The heavy cron routes iterate every camera. `wrangler.jsonc` sets
-  `limits.cpu_ms = 300000` (5 min) to match the old behavior — this requires a
-  **paid Workers plan**. Cron Triggers also run on the paid plan.
-- `compatibility_flags` includes `nodejs_compat` (required by OpenNext) and
-  `global_fetch_strictly_public` (so internal route-to-route `fetch` calls work).
-- `worker-configuration.d.ts` and `.open-next/` are generated and gitignored;
-  run `npm run cf-typegen` after cloning.
-
-## Documentation
-
-- [Project Orientation](PROJECT_ORIENTATION.md) — deep architecture & data model
-- [Architecture Overview](docs/architecture/ARCHITECTURE_REFACTOR.md)
-- [Ranking Algorithm](docs/development/RANKING_ALGORITHM.md)
-- [Project Health Review](PROJECT_HEALTH_REVIEW.md) — restart assessment
-
-## License
-
-Private project
+`camera_ytb` is the only irreplaceable table — the curated camera list. The
+others (`camera_rankings`, `camera_weather_cache`, `task_locks`) are rebuilt
+by the crons. See [`d1/README.md`](d1/README.md).

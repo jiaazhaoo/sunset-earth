@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- ad-hoc debug probe, prod: 404 */
 import { NextRequest, NextResponse } from "next/server";
 import { devToolsEnabled, devToolsDisabledResponse } from "@/lib/auth";
 
@@ -151,7 +152,7 @@ export async function GET(request: NextRequest) {
                 reason: playerData.playabilityStatus?.reason,
                 messages: playerData.playabilityStatus?.messages,
               };
-            } catch (e) {
+            } catch {
               watchTest.playabilityStatus = { error: "parse_failed" };
             }
           }

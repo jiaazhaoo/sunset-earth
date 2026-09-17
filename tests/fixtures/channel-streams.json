@@ -1,0 +1,124 @@
+{
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "tabs": [
+    {
+     "tabRenderer": {
+      "title": "Live",
+      "content": {
+       "richGridRenderer": {
+        "contents": [
+         {
+          "richItemRenderer": {
+           "content": {
+            "lockupViewModel": {
+             "contentId": "1LKfIz99wBQ",
+             "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+             "contentImage": {
+              "thumbnailViewModel": {
+               "overlays": [
+                {
+                 "thumbnailOverlayBadgeViewModel": {
+                  "thumbnailBadges": [
+                   {
+                    "thumbnailBadgeViewModel": {
+                     "text": "LIVE",
+                     "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
+                    }
+                   }
+                  ]
+                 }
+                }
+               ]
+              }
+             },
+             "metadata": {
+              "lockupMetadataViewModel": {
+               "title": {
+                "content": "EarthCam Live:  Salmon Fishing and River (Pulaski, NY)"
+               }
+              }
+             }
+            }
+           }
+          }
+         },
+         {
+          "richItemRenderer": {
+           "content": {
+            "lockupViewModel": {
+             "contentId": "Xw8CoRwNfXs",
+             "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+             "contentImage": {
+              "thumbnailViewModel": {
+               "overlays": [
+                {
+                 "thumbnailOverlayBadgeViewModel": {
+                  "thumbnailBadges": [
+                   {
+                    "thumbnailBadgeViewModel": {
+                     "text": "LIVE",
+                     "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
+                    }
+                   }
+                  ]
+                 }
+                }
+               ]
+              }
+             },
+             "metadata": {
+              "lockupMetadataViewModel": {
+               "title": {
+                "content": "EarthCam Live:  Cayman Islands"
+               }
+              }
+             }
+            }
+           }
+          }
+         },
+         {
+          "richItemRenderer": {
+           "content": {
+            "lockupViewModel": {
+             "contentId": "OSI8qWMoK5E",
+             "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+             "contentImage": {
+              "thumbnailViewModel": {
+               "overlays": [
+                {
+                 "thumbnailOverlayBadgeViewModel": {
+                  "thumbnailBadges": [
+                   {
+                    "thumbnailBadgeViewModel": {
+                     "text": "1:02:33",
+                     "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT"
+                    }
+                   }
+                  ]
+                 }
+                }
+               ]
+              }
+             },
+             "metadata": {
+              "lockupMetadataViewModel": {
+               "title": {
+                "content": "EarthCam Live:  Flight 93 Memorial - Tower of Voices (Shanksville, PA)"
+               }
+              }
+             }
+            }
+           }
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}
