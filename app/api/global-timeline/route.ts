@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -17,21 +17,17 @@ type CameraRow = {
 export async function GET() {
   try {
     // Fetch all cameras with valid coordinates and timezone
-    const { data: cameras, error } = await supabaseAdmin
-      .from('camera_ytb')
-      .select('camera_id, ytb_title, placename, country, timezone, latitude, longitude')
-      .not('latitude', 'is', null)
-      .not('longitude', 'is', null)
-      .not('timezone', 'is', null)
-      .neq('timezone', '')
-      .limit(200);
+    const cameras = await query<CameraRow>(
+      `SELECT camera_id, ytb_title, placename, country, timezone, latitude, longitude
+       FROM camera_ytb
+       WHERE latitude IS NOT NULL
+         AND longitude IS NOT NULL
+         AND timezone IS NOT NULL
+         AND timezone != ''
+       LIMIT 200`
+    );
 
-    if (error) {
-      console.error('[global-timeline] Error fetching cameras:', error);
-      return NextResponse.json({ error: 'Failed to fetch cameras' }, { status: 500 });
-    }
-
-    if (!cameras || cameras.length === 0) {
+    if (cameras.length === 0) {
       return NextResponse.json({ events: [] });
     }
 

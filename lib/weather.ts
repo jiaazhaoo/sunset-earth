@@ -1,4 +1,11 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import {
+  query,
+  queryOne,
+  execute,
+  placeholders,
+  parseJson,
+  nowIso,
+} from "@/lib/db";
 
 const OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -94,9 +101,6 @@ const METRIC_LIMITS = {
 } as const;
 
 const WEATHER_CACHE_TABLE = "camera_weather_cache";
-const WEATHER_HISTORY_TABLE = "camera_weather_history";
-const SUN_CACHE_TABLE = "camera_sun_cache";
-const SUN_HISTORY_TABLE = "camera_sun_history";
 
 export async function fetchWeatherSnapshot(
   lat: number,
@@ -169,23 +173,32 @@ export async function getBulkCachedWeatherSnapshots(
   // Batch fetch from database for uncached items
   if (uncachedSlugs.length > 0) {
     try {
-      const { data, error } = await supabaseAdmin
-        .from(WEATHER_CACHE_TABLE)
-        .select("camera_id,data,fetched_at")
-        .in("camera_id", uncachedSlugs);
+      const slots = placeholders(uncachedSlugs.length);
+      const rows = slots
+        ? await query<{
+            camera_id: string;
+            data: string | null;
+            fetched_at: string;
+          }>(
+            `SELECT camera_id, data, fetched_at FROM ${WEATHER_CACHE_TABLE}
+             WHERE camera_id IN (${slots})`,
+            ...uncachedSlugs
+          )
+        : [];
 
-      if (!error && data) {
-        for (const row of data) {
-          const weatherData = row.data as OpenMeteoResponse;
-          result.set(row.camera_id, weatherData);
-
-          // Update in-memory cache
-          const fetchedAt = new Date(row.fetched_at).getTime();
-          weatherCache.set(row.camera_id, {
-            fetchedAt,
-            data: weatherData,
-          });
+      for (const row of rows) {
+        const weatherData = parseJson<OpenMeteoResponse>(row.data);
+        if (!weatherData) {
+          continue;
         }
+        result.set(row.camera_id, weatherData);
+
+        // Update in-memory cache
+        const fetchedAt = new Date(row.fetched_at).getTime();
+        weatherCache.set(row.camera_id, {
+          fetchedAt,
+          data: weatherData,
+        });
       }
     } catch (error) {
       console.warn("[weather] bulk load cache failed", error);
@@ -236,12 +249,6 @@ async function refreshWeatherSnapshot(
       weatherCache.set(key, entry);
       persistWeatherCache(key, lat, lng, data).catch((error) => {
         console.warn("[weather] failed to persist cache", error);
-      });
-      persistWeatherHistory(key, lat, lng, data).catch((error) => {
-        console.warn("[weather] failed to persist history", error);
-      });
-      persistSunData(key, lat, lng, data).catch((error) => {
-        console.warn("[weather] failed to persist sun data", error);
       });
       return data;
     } catch (error) {
@@ -571,18 +578,20 @@ function clamp01(value: number) {
 
 async function loadWeatherCache(key: string): Promise<CachedEntry | null> {
   try {
-    const { data, error } = await supabaseAdmin
-      .from(WEATHER_CACHE_TABLE)
-      .select("data,fetched_at")
-      .eq("camera_id", key)
-      .maybeSingle();
-    if (error || !data) {
+    const row = await queryOne<{ data: string | null; fetched_at: string }>(
+      `SELECT data, fetched_at FROM ${WEATHER_CACHE_TABLE} WHERE camera_id = ?`,
+      key
+    );
+    if (!row) {
       return null;
     }
-    const fetchedAt = new Date(data.fetched_at).getTime();
+    const parsed = parseJson<OpenMeteoResponse>(row.data);
+    if (!parsed) {
+      return null;
+    }
     return {
-      fetchedAt,
-      data: data.data as OpenMeteoResponse,
+      fetchedAt: new Date(row.fetched_at).getTime(),
+      data: parsed,
     };
   } catch (error) {
     console.warn("[weather] load cache failed", error);
@@ -597,87 +606,23 @@ async function persistWeatherCache(
   data: OpenMeteoResponse
 ) {
   try {
-    await supabaseAdmin.from(WEATHER_CACHE_TABLE).upsert(
-      {
-        camera_id: key,
-        lat,
-        lng,
-        data,
-        fetched_at: new Date().toISOString(),
-      },
-      { onConflict: "camera_id" }
+    await execute(
+      `INSERT INTO ${WEATHER_CACHE_TABLE} (camera_id, lat, lng, data, fetched_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(camera_id) DO UPDATE SET
+         lat = excluded.lat,
+         lng = excluded.lng,
+         data = excluded.data,
+         fetched_at = excluded.fetched_at`,
+      key,
+      lat,
+      lng,
+      JSON.stringify(data),
+      nowIso()
     );
   } catch (error) {
     console.warn("[weather] persist cache failed", error);
   }
-}
-
-async function persistWeatherHistory(
-  key: string,
-  lat: number,
-  lng: number,
-  data: OpenMeteoResponse
-) {
-  try {
-    await supabaseAdmin.from(WEATHER_HISTORY_TABLE).insert({
-      camera_id: key,
-      lat,
-      lng,
-      data,
-      fetched_at: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.warn("[weather] persist history failed", error);
-  }
-}
-
-async function persistSunData(
-  key: string,
-  lat: number,
-  lng: number,
-  data: OpenMeteoResponse
-) {
-  const sunriseValue = data.daily?.sunrise?.[0] ?? null;
-  const sunsetValue = data.daily?.sunset?.[0] ?? null;
-  const payload = {
-    sunrise: data.daily?.sunrise ?? [],
-    sunset: data.daily?.sunset ?? [],
-  };
-  try {
-    await supabaseAdmin.from(SUN_CACHE_TABLE).upsert(
-      {
-        camera_id: key,
-        lat,
-        lng,
-        sunrise: sunriseValue ? toIsoDate(sunriseValue) : null,
-        sunset: sunsetValue ? toIsoDate(sunsetValue) : null,
-        data: payload,
-        fetched_at: new Date().toISOString(),
-      },
-      { onConflict: "camera_id" }
-    );
-  } catch (error) {
-    console.warn("[weather] persist sun cache failed", error);
-  }
-
-  try {
-    await supabaseAdmin.from(SUN_HISTORY_TABLE).insert({
-      camera_id: key,
-      lat,
-      lng,
-      sunrise: sunriseValue ? toIsoDate(sunriseValue) : null,
-      sunset: sunsetValue ? toIsoDate(sunsetValue) : null,
-      data: payload,
-      fetched_at: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.warn("[weather] persist sun history failed", error);
-  }
-}
-
-function toIsoDate(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function pickClosestTime(times: string[] | undefined, targetMs: number) {

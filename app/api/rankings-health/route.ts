@@ -1,58 +1,41 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { queryOne } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    // Get freshness stats
-    const { data: stats, error: statsError } = await supabaseAdmin
-      .from("camera_rankings")
-      .select("computed_at, available")
-      .order("computed_at", { ascending: false })
-      .limit(1);
+    const freshnessThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    if (statsError) {
-      throw statsError;
-    }
+    // One aggregate replaces what used to be three count/stat queries plus the
+    // Postgres `get_avg_score()` stored function (whose definition never lived
+    // in this repo; averaging the available cameras' scores matches how the
+    // value is presented below).
+    const stats = await queryOne<{
+      latest_computed_at: string | null;
+      available_count: number | null;
+      fresh_count: number | null;
+      average_score: number | null;
+    }>(
+      `SELECT
+         MAX(computed_at) AS latest_computed_at,
+         SUM(CASE WHEN available = 1 THEN 1 ELSE 0 END) AS available_count,
+         SUM(CASE WHEN available = 1 AND computed_at >= ? THEN 1 ELSE 0 END) AS fresh_count,
+         AVG(CASE WHEN available = 1 THEN score END) AS average_score
+       FROM camera_rankings`,
+      freshnessThreshold.toISOString()
+    );
 
-    const latestUpdate = stats?.[0]?.computed_at
-      ? new Date(stats[0].computed_at)
+    const latestUpdate = stats?.latest_computed_at
+      ? new Date(stats.latest_computed_at)
       : null;
     const ageMinutes = latestUpdate
       ? Math.floor((Date.now() - latestUpdate.getTime()) / 1000 / 60)
       : null;
 
-    // Count available cameras
-    const { count: availableCount, error: countError } = await supabaseAdmin
-      .from("camera_rankings")
-      .select("*", { count: "exact", head: true })
-      .eq("available", true);
-
-    if (countError) {
-      throw countError;
-    }
-
-    // Count fresh data (within 24 hours)
-    const freshnessThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const { count: freshCount, error: freshError } = await supabaseAdmin
-      .from("camera_rankings")
-      .select("*", { count: "exact", head: true })
-      .eq("available", true)
-      .gte("computed_at", freshnessThreshold.toISOString());
-
-    if (freshError) {
-      throw freshError;
-    }
-
-    // Calculate average score
-    const { data: avgData, error: avgError } = await supabaseAdmin.rpc(
-      "get_avg_score",
-      {}
-    );
-    if (avgError) {
-      throw avgError;
-    }
+    const availableCount = stats?.available_count ?? 0;
+    const freshCount = stats?.fresh_count ?? 0;
+    const avgData = stats?.average_score ?? null;
 
     const health = {
       status:
@@ -63,8 +46,8 @@ export async function GET() {
             : "unhealthy",
       latestUpdate: latestUpdate?.toISOString() ?? null,
       ageMinutes,
-      availableCameras: availableCount ?? 0,
-      freshCameras: freshCount ?? 0,
+      availableCameras: availableCount,
+      freshCameras: freshCount,
       freshnessPercentage:
         availableCount && freshCount
           ? Math.round((freshCount / availableCount) * 100)

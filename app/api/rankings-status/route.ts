@@ -1,23 +1,26 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
     // Get all rankings with details
-    const { data: rankings, error } = await supabaseAdmin
-      .from("camera_rankings")
-      .select("camera_id, score, label, available, computed_at")
-      .order("computed_at", { ascending: false });
-
-    if (error) {
-      throw error;
-    }
+    const rankings = await query<{
+      camera_id: string;
+      score: number;
+      label: string | null;
+      available: number | null;
+      computed_at: string;
+    }>(
+      `SELECT camera_id, score, label, available, computed_at
+       FROM camera_rankings
+       ORDER BY computed_at DESC`
+    );
 
     // Group by status
-    const available = rankings?.filter((r) => r.available) || [];
-    const unavailable = rankings?.filter((r) => !r.available) || [];
+    const available = rankings.filter((r) => r.available === 1);
+    const unavailable = rankings.filter((r) => r.available !== 1);
 
     // Get score distribution
     const scoreRanges = {

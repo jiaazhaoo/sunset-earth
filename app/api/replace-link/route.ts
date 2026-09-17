@@ -81,58 +81,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const result = {
-      ...summary,
-      chainStatus: {
-        replaceLink: "success",
-        weatherCache: "pending",
-        computeRankings: "pending",
-      },
-    };
-
-    // Trigger next task in chain: weather-cache
-    try {
-      const baseUrl = request.nextUrl.origin;
-      console.log("[replace-link] triggering weather-cache...");
-      const weatherUrl = buildBypassUrl(
-        `${baseUrl}/api/weather-cache`,
-        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
-      );
-      const weatherHeaders: Record<string, string> = {
-        Authorization: `Bearer ${process.env.CRON_SECRET}`,
-      };
-      const bypassHeader = buildBypassHeader(
-        process.env.VERCEL_AUTOMATION_BYPASS_SECRET
-      );
-      if (bypassHeader) {
-        weatherHeaders["x-vercel-protection-bypass"] = bypassHeader;
-      }
-      const weatherResponse = await fetch(weatherUrl, {
-        headers: weatherHeaders,
-      });
-
-      if (!weatherResponse.ok) {
-        const errorText = await weatherResponse.text();
-        console.error(
-          "[replace-link] weather-cache failed:",
-          weatherResponse.status,
-          errorText
-        );
-        result.chainStatus.weatherCache = "failed";
-        result.chainStatus.computeRankings = "skipped";
-        return NextResponse.json(result, { status: 207 });
-      }
-
-      result.chainStatus.weatherCache = "triggered";
-      console.log("[replace-link] successfully triggered weather-cache");
-    } catch (error) {
-      console.error("[replace-link] failed to trigger weather-cache:", error);
-      result.chainStatus.weatherCache = "failed";
-      result.chainStatus.computeRankings = "skipped";
-      return NextResponse.json(result, { status: 207 });
-    }
-
-    return NextResponse.json(result);
+    // No chaining to weather-cache: it has its own 3-hourly Cron Trigger and
+    // compute-rankings runs every 5 minutes, so repaired links are picked up
+    // within one ranking cycle anyway. Dropping the chain removes a self-fetch
+    // (which cost a subrequest and needed the deployment's own hostname to be
+    // configured correctly) for no loss of freshness.
+    return NextResponse.json(summary);
   } catch (error) {
     console.error("[replace-link]", error);
     return NextResponse.json(
@@ -140,21 +94,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function buildBypassUrl(url: string, bypassSecret?: string) {
-  if (!bypassSecret) {
-    return url;
-  }
-  const parsed = new URL(url);
-  parsed.searchParams.set("x-vercel-set-bypass-cookie", "true");
-  parsed.searchParams.set("x-vercel-protection-bypass", bypassSecret);
-  return parsed.toString();
-}
-
-function buildBypassHeader(bypassSecret?: string) {
-  if (!bypassSecret) {
-    return null;
-  }
-  return bypassSecret;
 }

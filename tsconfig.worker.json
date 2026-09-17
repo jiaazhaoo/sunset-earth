@@ -1,0 +1,9 @@
+// Type-checks the Cloudflare Worker entrypoint against the workerd runtime
+// types (worker-configuration.d.ts). Kept separate from the main tsconfig so
+// those runtime types don't leak into the Next.js app, which uses web-standard
+// DOM types. Run with: npx tsc -p tsconfig.worker.json --noEmit
+{
+  "extends": "./tsconfig.json",
+  "include": ["worker.ts", "worker-configuration.d.ts", "env.d.ts"],
+  "exclude": ["node_modules"]
+}

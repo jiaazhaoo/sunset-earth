@@ -1,5 +1,5 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import tzLookup from "tz-lookup";
+import { query, queryOne, placeholders, toBool, parseJson } from "@/lib/db";
 
 const CAMERA_COLUMNS =
   "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available,sunset_delay,sunrise_advance,last_check,camera_metadata";
@@ -17,11 +17,13 @@ export type CameraRow = {
   tag: string | null;
   host_link: string | null;
   ytb_title: string | null;
-  link_available: boolean | null;
+  /** SQLite stores booleans as INTEGER 0/1. */
+  link_available: number | boolean | null;
   sunset_delay: number | string | null;
   sunrise_advance: number | string | null;
   last_check: string | null;
-  camera_metadata: any;
+  /** SQLite stores JSON as TEXT. */
+  camera_metadata: string | null;
 };
 
 export type CameraRecord = {
@@ -45,44 +47,40 @@ export type CameraRecord = {
 };
 
 export async function listCameras(limit = 200, offset = 0) {
-  const { data, error } = await supabaseAdmin
-    .from("camera_ytb")
-    .select(CAMERA_COLUMNS)
-    .range(offset, offset + limit - 1);
+  const rows = await query<CameraRow>(
+    `SELECT ${CAMERA_COLUMNS} FROM camera_ytb
+     ORDER BY camera_id
+     LIMIT ? OFFSET ?`,
+    limit,
+    offset
+  );
 
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return (data ?? []).map(mapCameraRow);
+  return rows.map(mapCameraRow);
 }
 
 export async function getCameraById(cameraId: string) {
-  const { data, error } = await supabaseAdmin
-    .from("camera_ytb")
-    .select(CAMERA_COLUMNS)
-    .eq("camera_id", cameraId)
-    .maybeSingle();
+  const row = await queryOne<CameraRow>(
+    `SELECT ${CAMERA_COLUMNS} FROM camera_ytb WHERE camera_id = ?`,
+    cameraId
+  );
 
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data ? mapCameraRow(data) : null;
+  return row ? mapCameraRow(row) : null;
 }
 
 export async function getCameraTagsMap(cameraIds: string[]): Promise<Map<string, string[]>> {
-  const { data, error } = await supabaseAdmin
-    .from("camera_ytb")
-    .select("camera_id, tag")
-    .in("camera_id", cameraIds);
+  const tagsMap = new Map<string, string[]>();
 
-  if (error) {
-    throw new Error(error.message);
+  const slots = placeholders(cameraIds.length);
+  if (!slots) {
+    return tagsMap;
   }
 
-  const tagsMap = new Map<string, string[]>();
-  for (const row of data ?? []) {
+  const rows = await query<{ camera_id: string; tag: string | null }>(
+    `SELECT camera_id, tag FROM camera_ytb WHERE camera_id IN (${slots})`,
+    ...cameraIds
+  );
+
+  for (const row of rows) {
     tagsMap.set(String(row.camera_id), parseTags(row.tag));
   }
 
@@ -122,11 +120,11 @@ function mapCameraRow(row: CameraRow): CameraRecord {
     tags: parseTags(row.tag),
     hostLink: row.host_link ?? null,
     ytbTitle: row.ytb_title ?? null,
-    linkAvailable: row.link_available ?? true,
+    linkAvailable: toBool(row.link_available, true),
     sunsetDelay: toNumber(row.sunset_delay) ?? 0,
     sunriseAdvance: toNumber(row.sunrise_advance) ?? 0,
     lastCheck: row.last_check ?? null,
-    metadata: row.camera_metadata ?? null,
+    metadata: parseJson(row.camera_metadata),
   };
 }
 

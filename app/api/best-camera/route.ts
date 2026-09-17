@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCameraById, getRandomCamera } from "@/lib/cameras";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { query, queryOne, placeholders, toBool } from "@/lib/db";
 
 type SolarEventType = "sunrise" | "sunset";
 
@@ -8,7 +8,8 @@ type RankingRow = {
   camera_id: string;
   score: number | null;
   label: string | null;
-  is_clear: boolean | null;
+  /** SQLite INTEGER 0/1. */
+  is_clear: number | boolean | null;
   distance_minutes: number | null;
   weather_class: string | null;
   timezone: string | null;
@@ -84,34 +85,29 @@ async function findBestCameraFromRankings(exclude: Set<string>) {
   // In development, rankings may not update every hour, so we use a longer threshold
   const freshnessThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  // Query pre-computed rankings
-  let query = supabaseAdmin
-    .from("camera_rankings")
-    .select("*")
-    .eq("available", true)
-    .gte("computed_at", freshnessThreshold.toISOString())  // Only fresh data
-    .order("score", { ascending: false })
-    .order("distance_minutes", { ascending: true })  // Secondary sort: prefer cameras closer to golden hour
-    .limit(100);
+  const excludeSlots = placeholders(exclusionList.length);
+  const excludeClause = excludeSlots
+    ? ` AND camera_id NOT IN (${excludeSlots})`
+    : "";
 
-  if (exclusionList.length > 0) {
-    query = query.not("camera_id", "in", `(${exclusionList.join(",")})`);
-  }
+  // Query pre-computed rankings. Secondary sort prefers cameras closer to
+  // golden hour when scores tie.
+  const rankings = await query<RankingRow>(
+    `SELECT * FROM camera_rankings
+     WHERE available = 1 AND computed_at >= ?${excludeClause}
+     ORDER BY score DESC, distance_minutes ASC
+     LIMIT 100`,
+    freshnessThreshold.toISOString(),
+    ...exclusionList
+  );
 
-  const { data: rankings, error } = await query;
-
-  if (error) {
-    console.error("[findBestCameraFromRankings] query error:", error);
-    return null;
-  }
-
-  if (!rankings || rankings.length === 0) {
+  if (!rankings.length) {
     return null;
   }
 
   // Get the best ranked camera that's not excluded and is available
   for (const ranking of rankings) {
-    const camera = await getCameraById(ranking.camera_id);
+    const camera = await getCameraById(String(ranking.camera_id));
 
     // Skip cameras that don't exist or have unavailable links
     if (!camera || camera.linkAvailable === false) {
@@ -124,7 +120,7 @@ async function findBestCameraFromRankings(exclude: Set<string>) {
 
     return {
       camera,
-      meta: buildMeta(ranking.camera_id, ranking as RankingRow),
+      meta: buildMeta(String(ranking.camera_id), ranking),
       rotationReset,
     };
   }
@@ -137,33 +133,29 @@ async function getRanking(cameraId: string) {
   // Accept data up to 24 hours old for individual camera queries
   const freshnessThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  const { data, error } = await supabaseAdmin
-    .from("camera_rankings")
-    .select("*")
-    .eq("camera_id", cameraId)
-    .gte("computed_at", freshnessThreshold.toISOString())
-    .maybeSingle();
-
-  if (error) {
+  try {
+    return await queryOne<RankingRow>(
+      `SELECT * FROM camera_rankings
+       WHERE camera_id = ? AND computed_at >= ?`,
+      cameraId,
+      freshnessThreshold.toISOString()
+    );
+  } catch (error) {
     console.warn("[getRanking] query error:", error);
     return null;
   }
-
-  return (data as RankingRow | null) ?? null;
 }
 
 async function countAvailableRankings() {
-  const { count, error } = await supabaseAdmin
-    .from("camera_rankings")
-    .select("*", { count: "exact", head: true })
-    .eq("available", true);
-
-  if (error) {
+  try {
+    const row = await queryOne<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM camera_rankings WHERE available = 1`
+    );
+    return row?.total ?? 0;
+  } catch (error) {
     console.warn("[countAvailableRankings] error:", error);
     return 0;
   }
-
-  return count ?? 0;
 }
 
 function buildMeta(cameraId: string, ranking: RankingRow) {
@@ -172,7 +164,7 @@ function buildMeta(cameraId: string, ranking: RankingRow) {
     cameraId,
     score: ranking.score ?? 0,
     label: ranking.label ?? undefined,
-    isClear: ranking.is_clear ?? false,
+    isClear: toBool(ranking.is_clear),
     distanceMinutes: ranking.distance_minutes ?? undefined,
     weatherClass: ranking.weather_class ?? undefined,
     timezone: ranking.timezone ?? null,

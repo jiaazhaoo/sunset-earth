@@ -7,9 +7,9 @@ Use this doc to brief AI coding partners (or new engineers) so they can jump dir
 ## 0. Quick Facts
 | Item | Details |
 | --- | --- |
-| Stack | Next.js App Router (React/TypeScript) + Tailwind, deployed on Vercel |
+| Stack | Next.js App Router (React/TypeScript) + Tailwind, deployed on Cloudflare Workers via OpenNext (`@opennextjs/cloudflare`) |
 | Backend | Next.js API routes + Supabase Postgres (admin key via `lib/supabaseAdmin.ts`) |
-| Cron Jobs | Hourly `/api/refresh-links`, `/api/weather-cache` every 3h, plus `/api/compute-rankings` every 5 min |
+| Cron Jobs | Cloudflare Cron Triggers (`wrangler.jsonc` + `worker.ts` scheduled handler): `/api/replace-link` hourly, `/api/weather-cache` every 3h, `/api/compute-rankings` every 5 min |
 | Weather Source | Open-Meteo forecast API (cached in Supabase + memory) |
 | Video Source | YouTube live streams stored in `camera_ytb` (`link_available`, `host_link` for refresh) |
 | Real-time | Cloudflare Realtime Presence for rooms (`components/realtime-sidebar.tsx`) |
@@ -188,10 +188,12 @@ Use this doc to brief AI coding partners (or new engineers) so they can jump dir
 - **Supabase:** `supabaseAdmin` uses service role key via env var. Read/write heavy endpoints (compute rankings, refresh links) rely on it. Keep rate limits in mind when running scripts locally.
 - **YouTube:** We embed using standard `https://www.youtube.com/embed/{id}?autoplay=1&mute=1`. Availability checks parse the embed HTML searching for known strings (e.g., “Playback on other websites has been disabled”).
 - **Cloudflare Realtime Presence / Voice:** Rooms update presence counts via `/api/room-presence`; voice meetings tracked via `voice_meeting_id` (see `components/room-voice-panel.tsx`).
-- **Environment Secrets:**
-  - `SUPABASE_SERVICE_KEY`, `SUPABASE_URL`
-  - `CRON_SECRET` (Vercel scheduled tasks)
-  - Optional: keys for voice/presence providers if configured.
+- **Environment Secrets** (set via `wrangler secret put` in production):
+  - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (see `lib/supabaseAdmin.ts`)
+  - `CRON_SECRET` (protects the cron/task API routes; sent as Bearer by `worker.ts`)
+  - `SITE_URL` (public base URL; used for internal route-to-route calls & the cron handler)
+  - Optional: `CLOUDFLARE_REALTIME_*` / `DAILY_*` for voice/presence.
+  - See `.env.example` for the full list.
 
 ---
 

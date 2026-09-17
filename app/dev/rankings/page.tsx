@@ -1,31 +1,26 @@
 import { notFound } from "next/navigation";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { listCameras } from "@/lib/cameras";
+import { query } from "@/lib/db";
 
 type RankingRow = {
   camera_id: string;
   score: number | null;
   label: string | null;
   distance_minutes: number | null;
-  available: boolean | null;
+  available: number | null;
 };
 
 async function getRankings() {
   const freshnessThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  const { data, error } = await supabaseAdmin
-    .from("camera_rankings")
-    .select("camera_id,score,label,distance_minutes,available")
-    .gte("computed_at", freshnessThreshold.toISOString())
-    .order("score", { ascending: false })
-    .order("distance_minutes", { ascending: true })
-    .limit(200);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return (data ?? []) as RankingRow[];
+  return query<RankingRow>(
+    `SELECT camera_id, score, label, distance_minutes, available
+     FROM camera_rankings
+     WHERE computed_at >= ?
+     ORDER BY score DESC, distance_minutes ASC
+     LIMIT 200`,
+    freshnessThreshold.toISOString()
+  );
 }
 
 export default async function DevRankingsPage() {

@@ -21,11 +21,6 @@ This directory contains comprehensive documentation for the Sunset Earth project
 - [Cron Optimization Analysis](development/CRON_OPTIMIZATION_ANALYSIS.md) - Job scheduling insights
 - [Task Lock Implementation](development/TASK_LOCK_IMPLEMENTATION.md) - Distributed locking
 
-### For ML/AI Work
-- [ML Training Plan](ml-training/ML_TRAINING_PLAN.md) - Training strategy and process
-- [ML Training Summary](ml-training/ML_TRAINING_SUMMARY.md) - Training results
-- [Model Quality Report](ml-training/MODEL_QUALITY_REPORT.md) - Performance metrics
-
 ## Documentation Structure
 
 ```
@@ -44,11 +39,6 @@ docs/
 │   ├── CRON_OPTIMIZATION_ANALYSIS.md
 │   ├── RANKING_ALGORITHM.md
 │   └── TASK_LOCK_IMPLEMENTATION.md
-│
-└── ml-training/          # Machine learning documentation
-    ├── ML_TRAINING_PLAN.md
-    ├── ML_TRAINING_SUMMARY.md
-    └── MODEL_QUALITY_REPORT.md
 ```
 
 ## Key System Components
@@ -75,23 +65,14 @@ Smart replacement of unavailable YouTube streams:
 
 **Documentation**: [Algorithm Analysis](development/ALGORITHM_ANALYSIS.md), [Availability Check Fix](development/AVAILABILITY_CHECK_FIX.md)
 
-### 3. ML Pool Manager
-**Files**: [lib/poolManager.ts](../lib/poolManager.ts), [scripts/train_model.py](../scripts/train_model.py)
+### 3. Cron Job Architecture
+**Files**: [wrangler.jsonc](../wrangler.jsonc), [worker.ts](../worker.ts), [lib/task-lock.ts](../lib/task-lock.ts)
 
-Machine learning model for camera categorization:
-- Trained on weather features and camera metadata
-- Predicts optimal camera pool assignment
-- Deployed as ONNX model for runtime inference
-
-**Documentation**: [ML Training Plan](ml-training/ML_TRAINING_PLAN.md), [Model Quality Report](ml-training/MODEL_QUALITY_REPORT.md)
-
-### 4. Cron Job Architecture
-**Files**: [vercel.json](../vercel.json), [lib/task-lock.ts](../lib/task-lock.ts)
-
-Three automated jobs:
-- `refresh-links` (hourly): Camera availability and link replacement
-- `weather-cache` (3 hours): Weather data fetching
-- `compute-rankings` (5 minutes): Camera score calculation
+Cloudflare Cron Triggers drive three automated jobs via `worker.ts`'s
+`scheduled()` handler:
+- `/api/replace-link` (hourly): Camera availability and link replacement
+- `/api/weather-cache` (every 3 hours): Weather data fetching
+- `/api/compute-rankings` (every 5 minutes): Camera score calculation
 
 **Documentation**: [Cron Optimization Analysis](development/CRON_OPTIMIZATION_ANALYSIS.md), [Task Lock Implementation](development/TASK_LOCK_IMPLEMENTATION.md)
 
