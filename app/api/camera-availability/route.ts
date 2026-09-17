@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execute, fromBool, nowIso } from "@/lib/db";
 
+// Called from a real browser request, so the request's own origin is always the
+// correct base — no deployment URL needs to be configured anywhere.
 async function triggerReplaceLink(origin: string, cronSecret?: string) {
-  const baseUrl = process.env.SITE_URL ?? origin;
   const headers: Record<string, string> = {};
   if (cronSecret) {
     headers["Authorization"] = `Bearer ${cronSecret}`;
   }
-  return fetch(`${baseUrl}/api/replace-link`, { headers });
+  return fetch(`${origin}/api/replace-link`, { headers });
 }
 
 export async function POST(request: NextRequest) {

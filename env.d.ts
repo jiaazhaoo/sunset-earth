@@ -1,13 +1,12 @@
 // Augments the wrangler-generated `CloudflareEnv` (worker-configuration.d.ts)
-// with secret bindings, which `wrangler types` cannot infer because secrets
-// are not declared in wrangler.jsonc. Set these via `wrangler secret put`.
+// with bindings `wrangler types` cannot infer: secrets are not declared in
+// wrangler.jsonc. Set them with `wrangler secret put <NAME>`.
 interface CloudflareEnv {
+  /** Bearer token protecting the cron/task API routes. */
   CRON_SECRET?: string;
-  SUPABASE_URL?: string;
-  SUPABASE_SERVICE_ROLE_KEY?: string;
-  CLOUDFLARE_REALTIME_API_BASE?: string;
-  CLOUDFLARE_BASIC_AUTH?: string;
-  CLOUDFLARE_REALTIME_PRESET?: string;
-  DAILY_API_KEY?: string;
-  DAILY_DOMAIN?: string;
+  /**
+   * Optional public base URL of the deployment. Nothing calls the deployment by
+   * hostname any more, so this only labels the in-process cron requests.
+   */
+  SITE_URL?: string;
 }

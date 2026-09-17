@@ -31,7 +31,10 @@ export default {
       return;
     }
 
-    const base = env.SITE_URL ?? "https://localhost";
+    // The cron request never leaves the Worker — it is passed straight to the
+    // fetch handler below — so this host only has to make a well-formed URL.
+    // SITE_URL is honoured if set, but nothing breaks when it is not.
+    const base = env.SITE_URL ?? "https://sunset-earth.internal";
     const request = new Request(`${base}${path}`, {
       headers: env.CRON_SECRET
         ? { Authorization: `Bearer ${env.CRON_SECRET}` }

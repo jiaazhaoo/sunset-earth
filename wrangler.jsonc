@@ -36,9 +36,7 @@
       "*/5 * * * *"
     ]
   },
-  "vars": {
-    // Non-secret defaults. Set SITE_URL to the deployed URL after the first
-    // deploy. CRON_SECRET is a secret: `wrangler secret put CRON_SECRET`.
-    "SITE_URL": "https://sunset-earth.workers.dev"
-  }
+  // No vars are required. CRON_SECRET is a secret: `wrangler secret put CRON_SECRET`.
+  // SITE_URL is optional — nothing calls the deployment by hostname any more.
+  "vars": {}
 }
