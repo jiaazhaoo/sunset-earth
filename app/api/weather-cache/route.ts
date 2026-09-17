@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth";
 import { listCameras } from "@/lib/cameras";
 import { fetchWeatherSnapshot } from "@/lib/weather";
 import { withTaskLock } from "@/lib/task-lock";
@@ -10,15 +11,8 @@ const BATCH_SIZE = 200;
 
 export async function GET(request: NextRequest) {
   try {
-    if (process.env.CRON_SECRET) {
-      const auth = request.headers.get("Authorization");
-      if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-        return NextResponse.json(
-          { error: "Unauthorized" },
-          { status: 401 }
-        );
-      }
-    }
+    const denied = requireCronSecret(request);
+    if (denied) return denied;
 
     // Execute with task lock to prevent concurrent execution
     const lockResult = await withTaskLock(

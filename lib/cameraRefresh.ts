@@ -23,12 +23,9 @@ type MatchCandidate = {
 };
 
 export async function refreshCamera(camera: CameraRecord) {
-  // If current stream is explicitly embed-blocked, skip replacement attempts
-  const availability = await isCameraAvailable(camera);
-  if (!availability.available && availability.reason === "playability_blocked") {
-    return { updated: false, reason: "embed-blocked" as const };
-  }
-
+  // No pre-check of the current stream here: a dead live stream and an
+  // embed-restricted one both probe as playability_blocked, and in either case
+  // the right move is to look for a replacement on the host channel.
   if (!camera.hostLink) {
     return { updated: false, reason: "missing-host" as const };
   }

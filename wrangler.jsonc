@@ -47,5 +47,7 @@
   },
   // No vars are required. CRON_SECRET is a secret: `wrangler secret put CRON_SECRET`.
   // SITE_URL is optional — nothing calls the deployment by hostname any more.
+  // ENABLE_DEV_ROUTES: set to "1" to expose /dev pages and /api/dev routes in
+  // production (they probe arbitrary URLs — leave off unless debugging).
   "vars": {}
 }

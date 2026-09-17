@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth";
 import { listCameras } from "@/lib/cameras";
 import { getCachedWeatherSnapshot } from "@/lib/weather";
 import { scoreCameraWeather } from "@/lib/client-ranking-v2";
@@ -13,15 +14,8 @@ const BATCH_SIZE = 50;
 
 export async function GET(request: NextRequest) {
   try {
-    if (process.env.CRON_SECRET) {
-      const auth = request.headers.get("Authorization");
-      if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-        return NextResponse.json(
-          { error: "Unauthorized" },
-          { status: 401 }
-        );
-      }
-    }
+    const denied = requireCronSecret(request);
+    if (denied) return denied;
 
     // Check if weather-cache is still running
     const weatherCacheRunning = await isTaskLocked("weather-cache");

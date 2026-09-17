@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { devToolsEnabled } from "@/lib/auth";
 import { listCameras } from "@/lib/cameras";
 import { query } from "@/lib/db";
 
@@ -24,7 +25,7 @@ async function getRankings() {
 }
 
 export default async function DevRankingsPage() {
-  if (process.env.NODE_ENV !== "development") {
+  if (!devToolsEnabled()) {
     notFound();
   }
 

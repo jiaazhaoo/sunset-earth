@@ -85,7 +85,8 @@ function VideoFrame({
   onStreamError,
 }: {
   camera: CameraRecord;
-  onStreamError: () => void;
+  /** errorCode is the YouTube IFrame API code; undefined for timeouts. */
+  onStreamError: (errorCode?: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<any>(null);
@@ -132,7 +133,7 @@ function VideoFrame({
             },
             onError: (event: { data: number }) => {
               console.warn("youtube player error", event.data);
-              onStreamError();
+              onStreamError(event.data);
             },
             onStateChange: (event: { data: number }) => {
               if (event.data === window.YT.PlayerState.PLAYING) {
@@ -192,12 +193,15 @@ export function CameraViewer({ initialCamera }: Props) {
     return `?${params.toString()}`;
   }, [seen, blacklist]);
 
-  const markUnavailable = useCallback((cameraId: string) => {
+  // Report a real player error so the server can re-verify the stream. Local
+  // timeouts are handled purely client-side via the blacklist: they usually
+  // mean this browser (autoplay policy, extensions, network), not the camera.
+  const reportPlayerError = useCallback((cameraId: string, errorCode: number) => {
     fetch("/api/camera-availability", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cameraId, available: false }),
-    }).catch((error) => console.warn("mark unavailable failed", error));
+      body: JSON.stringify({ cameraId, errorCode }),
+    }).catch((error) => console.warn("report player error failed", error));
   }, []);
 
   const handleSwitch = useCallback(async () => {
@@ -231,15 +235,20 @@ export function CameraViewer({ initialCamera }: Props) {
     }
   }, [excludeQuery]);
 
-  const handleStreamFailure = useCallback(async () => {
-    if (camera?.id) {
-      setBlacklist((prev) =>
-        prev.includes(camera.id) ? prev : [...prev, camera.id]
-      );
-      markUnavailable(camera.id);
-    }
-    await handleSwitch();
-  }, [camera?.id, handleSwitch, markUnavailable]);
+  const handleStreamFailure = useCallback(
+    async (errorCode?: number) => {
+      if (camera?.id) {
+        setBlacklist((prev) =>
+          prev.includes(camera.id) ? prev : [...prev, camera.id]
+        );
+        if (typeof errorCode === "number") {
+          reportPlayerError(camera.id, errorCode);
+        }
+      }
+      await handleSwitch();
+    },
+    [camera?.id, handleSwitch, reportPlayerError]
+  );
 
   useEffect(() => {
     if (!camera?.id) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireCronSecret } from "@/lib/auth";
 import { isCameraAvailable } from "@/lib/availability";
 
 type Payload = {
@@ -7,6 +8,9 @@ type Payload = {
 };
 
 export async function POST(request: NextRequest) {
+  const denied = requireCronSecret(request);
+  if (denied) return denied;
+
   try {
     const body = (await request.json()) as { camera?: Payload };
     const { camera } = body;

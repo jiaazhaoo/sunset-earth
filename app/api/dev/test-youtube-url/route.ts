@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { devToolsEnabled, devToolsDisabledResponse } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
+  if (!devToolsEnabled()) return devToolsDisabledResponse();
+
   try {
     const url =
       request.nextUrl.searchParams.get("url") ||
