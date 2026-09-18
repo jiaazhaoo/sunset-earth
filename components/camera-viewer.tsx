@@ -354,7 +354,7 @@ export function CameraViewer({ initialCamera }: Props) {
 
       <section
         className="mx-auto flex w-full flex-col"
-        style={{ width: "min(100%, calc((100dvh - 24rem) * 16 / 9))" }}
+        style={{ width: "min(100%, calc((100dvh - 19rem) * 16 / 9))" }}
       >
         {/* Player — the one rounded shape on the page. */}
         <div className="relative">
@@ -372,36 +372,36 @@ export function CameraViewer({ initialCamera }: Props) {
           </p>
         </div>
 
-        {/* Caption: words on the left, the world on the right */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-end">
-          <div className="min-w-0">
-            <h1 className="font-serif text-4xl leading-none tracking-tight text-white sm:truncate sm:text-5xl">
-              {camera?.name ?? "No active stream"}
-            </h1>
-            <p className="mt-2 text-sm text-white/55">
-              {location || "Location pending"}
-              {camera?.tags?.[0] ? <span className="text-white/35"> · {camera.tags[0]}</span> : null}
-            </p>
-            <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
-          </div>
-
-          <div className="flex flex-col items-end gap-3">
+        {/* Caption: a small globe, the words, the button */}
+        <div className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex min-w-0 items-center gap-5">
             <WorldMap
               current={here}
               others={points.filter((p) => p.id !== camera?.id)}
               now={now}
               onPick={pickById}
-              className="h-auto w-full max-w-[26rem]"
+              className="h-24 w-24 shrink-0"
             />
-            <button
-              onClick={handleSwitch}
-              disabled={loading}
-              className="group shrink-0 border border-white/25 px-5 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50"
-            >
-              {loading ? "Switching…" : "Next camera"}
-              <span aria-hidden className="ml-2 inline-block transition-transform group-hover:translate-x-1">→</span>
-            </button>
+            <div className="min-w-0">
+              <h1 className="font-serif text-4xl leading-none tracking-tight text-white sm:truncate sm:text-5xl">
+                {camera?.name ?? "No active stream"}
+              </h1>
+              <p className="mt-2 text-sm text-white/55">
+                {location || "Location pending"}
+                {camera?.tags?.[0] ? <span className="text-white/35"> · {camera.tags[0]}</span> : null}
+              </p>
+              <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
+            </div>
           </div>
+
+          <button
+            onClick={handleSwitch}
+            disabled={loading}
+            className="group shrink-0 self-start border border-white/25 px-5 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50 sm:self-end"
+          >
+            {loading ? "Switching…" : "Next camera"}
+            <span aria-hidden className="ml-2 inline-block transition-transform group-hover:translate-x-1">→</span>
+          </button>
         </div>
       </section>
     </>
