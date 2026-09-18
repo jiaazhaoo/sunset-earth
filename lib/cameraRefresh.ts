@@ -4,6 +4,7 @@ import { isCameraAvailable } from "@/lib/availability";
 import {
   calculatePlaceMatch,
   fetchChannelLiveCandidates,
+  looksLikeBroadcast,
   searchLiveVideos,
   type LiveVideoInfo,
 } from "@/lib/youtube";
@@ -123,6 +124,8 @@ async function adoptBestMatch(
   // holds whatever stream the camera last pointed at, and years of automated
   // replacement have drifted it away from the real location for many rows.
   const scored = candidates
+    // A news channel covering the landmark is not a camera on it.
+    .filter((live) => !looksLikeBroadcast(live.title, live.channelUrl ?? camera.hostLink))
     .map((live) => ({
       ...live,
       score: calculatePlaceMatch(camera.name, camera.city, live.title),

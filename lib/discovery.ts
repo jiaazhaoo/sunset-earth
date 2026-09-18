@@ -7,6 +7,7 @@ import { analyzeTitleByRules } from "@/lib/place-rules";
 import {
   calculatePlaceMatch,
   fetchChannelLiveCandidates,
+  looksLikeBroadcast,
   searchLiveVideos,
   type LiveVideoInfo,
 } from "@/lib/youtube";
@@ -224,6 +225,9 @@ async function analyseCandidate(
     placename: null, city: null, country: null, latitude: null, longitude: null, timezone: null,
     tag: null, metadata: null, confidence: null, analysis: {}, ...partial,
   });
+
+  // 0. Broadcasts (news, events) are never a fixed camera view.
+  if (looksLikeBroadcast(video.title, video.channelUrl)) return reject("broadcast");
 
   // 1. Playable and embeddable, or it is useless to us.
   const probe = await isCameraAvailable(buildCameraStub(video.videoId, video.title));
