@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 /*
- * One dark theme, flat, no decoration: the video is the only thing that gets
- * a rounded corner or a colour. Tokens here so components only ever say
- * `text-muted`, `border-line`, `bg-surface`.
+ * One dark theme, flat and square: the video frame is the only rounded
+ * shape. Colour is the sunset itself — amber → orange → violet — used for
+ * the top rule, the action button and the light phase, nothing else.
  */
 :root {
   --background: #09090b;
@@ -40,7 +40,10 @@ html {
 
 body {
   min-height: 100dvh;
-  background: var(--background);
+  /* Dusk: a little violet at the top fading to near-black. */
+  background:
+    linear-gradient(180deg, rgba(76, 29, 149, 0.16) 0%, rgba(251, 146, 60, 0.05) 28%, transparent 60%),
+    var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;
