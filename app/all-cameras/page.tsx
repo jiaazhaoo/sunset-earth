@@ -48,7 +48,7 @@ export default async function AllCamerasPage() {
             </div>
             <Link
               href="/"
-              className="rounded-full border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-500 hover:text-zinc-900"
+              className=" border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-500 hover:text-zinc-900"
             >
               返回主页
             </Link>
@@ -62,9 +62,9 @@ export default async function AllCamerasPage() {
           {cameras.map((camera) => (
             <article
               key={camera.id}
-              className="rounded-2xl border border-zinc-200 bg-white shadow-sm"
+              className=" border border-zinc-200 bg-white shadow-sm"
             >
-              <div className="relative aspect-video overflow-hidden rounded-t-2xl bg-black">
+              <div className="relative aspect-video overflow-hidden bg-black">
                 {camera.embedUrl ? (
                   <iframe
                     src={camera.embedUrl}
@@ -79,7 +79,7 @@ export default async function AllCamerasPage() {
                   </div>
                 )}
                 {!camera.linkAvailable && (
-                  <span className="absolute left-3 top-3 rounded-full bg-red-600/90 px-3 py-1 text-xs font-semibold text-white">
+                  <span className="absolute left-3 top-3 bg-red-600/90 px-3 py-1 text-xs font-semibold text-white">
                     已禁用
                   </span>
                 )}

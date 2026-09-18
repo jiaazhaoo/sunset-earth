@@ -63,7 +63,7 @@ export default async function DevRankingsPage() {
           return (
             <li
               key={row.camera_id}
-              className="flex items-start justify-between rounded-xl border border-zinc-200/60 bg-white/70 p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70"
+              className="flex items-start justify-between border border-zinc-200/60 bg-white/70 p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70"
             >
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-400">

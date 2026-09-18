@@ -98,10 +98,10 @@ Manual run: `curl -H "Authorization: Bearer $CRON_SECRET" "https://sunset-earth.
 
 ```
 app/                Next.js app router
-  page.tsx          Homepage: best camera, stats, "up next" rail, timeline
+  page.tsx          Homepage: best camera + the next best ten
   api/              Cron routes, viewer endpoints, /api/admin/* (cookie or bearer), /api/dev/* (prod: 404)
   admin/candidates  Review queue for discovered streams
-components/         camera-viewer, sun-overview, site-header, use-now
+components/         camera-viewer (info line, player, thumbnail strip), site-header, use-now
 lib/
   db.ts             D1 access (env.DB)
   cameras.ts        camera_ytb rows → CameraRecord

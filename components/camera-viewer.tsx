@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { CameraRecord } from "@/lib/cameras";
+import type { CameraMeta } from "@/lib/rankings";
 import { useNow } from "@/components/use-now";
 import {
   describeSunPhase,
@@ -46,26 +47,6 @@ type Props = {
 };
 
 // No persistent seen/blacklist to avoid surprising excludes across sessions
-
-type CameraMeta = {
-  cameraId: string;
-  score: number;
-  label?: string;
-  isClear?: boolean;
-  distanceMinutes?: number;
-  weatherClass?: string;
-  timezone?: string | null;
-  sunrise?: string;
-  sunset?: string;
-  nextEvent?: {
-    type: "sunrise" | "sunset";
-    timeISO: string;
-  } | null;
-  followingEvent?: {
-    type: "sunrise" | "sunset";
-    timeISO: string;
-  } | null;
-};
 
 type BestCameraResponse = {
   camera: CameraRecord;
@@ -318,78 +299,97 @@ export function CameraViewer({ initialCamera }: Props) {
 
   const location = [camera?.city, camera?.country].filter(Boolean).join(", ");
 
+  // Thumbnail strip: the best other cameras right now, in ranking order.
+  const [others, setOthers] = useState<TopCamera[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const exclude = camera?.id ? `&exclude=${encodeURIComponent(camera.id)}` : "";
+    fetch(`/api/top-cameras?limit=10${exclude}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { cameras: [] }))
+      .then((data: { cameras?: TopCamera[] }) => {
+        // Belt and braces: never show the camera that is playing.
+        if (!cancelled) setOthers((data.cameras ?? []).filter((c) => c.camera.id !== camera?.id));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [camera?.id]);
+
+  const pick = useCallback((item: TopCamera) => {
+    setSeen((prev) => (prev.includes(item.camera.id) ? prev : [...prev, item.camera.id]));
+    setCamera(item.camera);
+    setCameraMeta(item.meta);
+  }, []);
+
   return (
-    <section className="flex w-full flex-col gap-5">
-      {/* Player */}
-      <div className="relative">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -inset-x-6 -top-8 -bottom-10 -z-10 rounded-[2.5rem] bg-[radial-gradient(60%_60%_at_50%_40%,rgba(251,146,60,0.18),transparent_70%)] blur-2xl"
-        />
-        <div className="aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)] ring-1 ring-line-strong sm:rounded-3xl">
-          {camera?.embedUrl ? (
-            <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-sm text-muted">
-              No playable camera right now
-            </div>
-          )}
+    <section className="flex w-full flex-col gap-3">
+      {/* One line: next · conditions · where */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <button
+          onClick={handleSwitch}
+          disabled={loading}
+          className="shrink-0 border border-line-strong px-3 py-1.5 text-sm font-medium text-foreground transition hover:border-foreground disabled:opacity-50"
+        >
+          {loading ? "Switching…" : "Next camera →"}
+        </button>
+
+        <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
+
+        <div className="ml-auto min-w-0 text-right">
+          <h1 className="truncate font-medium text-foreground">
+            {camera?.name ?? "No active stream"}
+            {camera?.tags?.[0] ? <span className="text-faint"> · {camera.tags[0]}</span> : null}
+          </h1>
+          <p className="truncate text-xs text-muted">{location || "Location pending"}</p>
         </div>
       </div>
 
-      {/* Title row */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-              {camera?.name ?? "No active stream"}
-            </h1>
-            {camera?.tags?.[0] ? (
-              <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent">
-                {camera.tags[0]}
-              </span>
-            ) : null}
+      {/* Player — the one rounded thing on the page */}
+      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+        {camera?.embedUrl ? (
+          <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-sm text-muted">
+            No playable camera right now
           </div>
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted">
-            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span className="truncate">{location || "Location pending"}</span>
-            {camera?.sourceUrl ? (
-              <>
-                <span aria-hidden className="text-faint">·</span>
-                <a
-                  href={camera.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="shrink-0 text-faint underline-offset-4 transition hover:text-foreground hover:underline"
-                >
-                  Open on YouTube
-                </a>
-              </>
-            ) : null}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {process.env.NODE_ENV !== "production" && cameraMeta ? (
-            <span className="rounded-md border border-line px-2 py-1 font-mono text-xs text-faint">
-              score {cameraMeta.score}
-              {cameraMeta.label ? ` · ${cameraMeta.label}` : ""}
-            </span>
-          ) : null}
-          <CameraActions loading={loading} onSwitchClick={handleSwitch} />
-        </div>
+        )}
+        <QualityHint key={camera?.id} />
       </div>
 
-      {/* Stats */}
-      <CameraStats meta={cameraMeta} timezone={activeTimezone} now={now} />
+      {/* Other cameras, ranking order */}
+      {others.length ? (
+        <ul className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pt-1 sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0">
+          {others.map((item) => (
+            <li key={item.camera.id} className="w-40 shrink-0 sm:w-auto">
+              <button onClick={() => pick(item)} className="group block w-full text-left">
+                <div className="aspect-video w-full overflow-hidden bg-black">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`https://i.ytimg.com/vi/${extractYoutubeId(item.camera.sourceUrl) ?? ""}/mqdefault.jpg`}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover opacity-80 transition group-hover:opacity-100"
+                  />
+                </div>
+                <p className="mt-1 truncate text-xs text-foreground">{item.camera.name}</p>
+                <p className="truncate text-[11px] text-faint">
+                  {[item.camera.city, item.camera.country].filter(Boolean).join(", ")}
+                  {now ? ` · ${describeSunPhase(item.meta.nextEvent, item.meta.followingEvent, now, item.meta.timezone).title}` : ""}
+                </p>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   );
 }
 
-function CameraStats({
+type TopCamera = { camera: CameraRecord; meta: CameraMeta };
+
+/** Local time · light · sky, as plain text segments. */
+function Conditions({
   meta,
   timezone,
   now,
@@ -398,98 +398,52 @@ function CameraStats({
   timezone: string | null;
   now: Date | null;
 }) {
-  const clock = now ? formatClock(now, timezone) : "--:--";
-  const zone = now ? formatZoneAbbr(timezone, now) : "";
-  const phase = now
-    ? describeSunPhase(meta?.nextEvent, meta?.followingEvent, now, timezone)
-    : null;
+  if (!now) return null;
+  const clock = formatClock(now, timezone);
+  const zone = formatZoneAbbr(timezone, now);
+  const phase = describeSunPhase(meta?.nextEvent, meta?.followingEvent, now, timezone);
   const sky = describeWeather(meta?.weatherClass);
-
-  const toneRing =
-    phase?.tone === "golden"
-      ? "ring-amber-400/40 bg-amber-400/10"
-      : phase?.tone === "blue"
-        ? "ring-sky-400/40 bg-sky-400/10"
-        : "ring-line bg-surface";
+  const tone =
+    phase.tone === "golden" ? "text-amber-300" : phase.tone === "blue" ? "text-sky-300" : "text-foreground";
 
   return (
-    <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <StatTile
-        label="Local time"
-        icon="🕐"
-        value={<span className="tnum">{clock}</span>}
-        detail={zone ? `${zone} · ${timezone}` : (timezone ?? "Timezone pending")}
-      />
-      <StatTile
-        label="Light"
-        icon={phase?.event?.type === "sunrise" ? "🌅" : "🌇"}
-        value={phase?.title ?? "—"}
-        detail={phase?.detail ?? "Waiting for sun times"}
-        className={toneRing}
-      />
-      <StatTile label="Sky" icon={sky.icon} value={sky.title} detail={sky.detail} />
+    <dl className="flex min-w-0 flex-wrap items-baseline gap-x-5 gap-y-1">
+      <div className="flex items-baseline gap-1.5">
+        <dt className="text-xs text-faint">Local</dt>
+        <dd className="tnum text-foreground">{clock}</dd>
+        {zone ? <dd className="text-xs text-faint">{zone}</dd> : null}
+      </div>
+      <div className="flex min-w-0 items-baseline gap-1.5">
+        <dt className="text-xs text-faint">Light</dt>
+        <dd className={`truncate ${tone}`}>{phase.title}</dd>
+        <dd className="hidden truncate text-xs text-faint md:block">{phase.detail}</dd>
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <dt className="text-xs text-faint">Sky</dt>
+        <dd className="text-foreground">{sky.title}</dd>
+      </div>
     </dl>
   );
 }
 
-function StatTile({
-  label,
-  icon,
-  value,
-  detail,
-  className = "ring-line bg-surface",
-}: {
-  label: string;
-  icon: string;
-  value: React.ReactNode;
-  detail: string;
-  className?: string;
-}) {
+/**
+ * Points at the player's own settings control for picking a resolution.
+ * Sits over the frame but never intercepts clicks, and fades out on its own.
+ */
+function QualityHint() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const id = setTimeout(() => setVisible(false), 9000);
+    return () => clearTimeout(id);
+  }, []);
   return (
-    <div className={`flex items-start gap-3 rounded-2xl p-4 ring-1 ${className}`}>
-      <span aria-hidden className="mt-0.5 text-xl leading-none">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <dt className="text-[11px] font-medium uppercase tracking-[0.18em] text-faint">
-          {label}
-        </dt>
-        <dd className="mt-0.5 truncate text-lg font-semibold text-foreground">{value}</dd>
-        <dd className="truncate text-xs text-muted">{detail}</dd>
-      </div>
-    </div>
-  );
-}
-
-function CameraActions({
-  loading,
-  onSwitchClick,
-}: {
-  loading: boolean;
-  onSwitchClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onSwitchClick}
-      disabled={loading}
-      className="group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:shadow-xl hover:shadow-orange-500/30 disabled:cursor-not-allowed disabled:from-zinc-700 disabled:to-zinc-600 disabled:shadow-none sm:w-auto"
+    <div
+      aria-hidden
+      className={`pointer-events-none absolute right-3 top-3 border border-white/20 bg-black/60 px-2 py-1 text-[11px] text-white/80 backdrop-blur-sm transition-opacity duration-700 ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
     >
-      {loading ? (
-        <>
-          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-          Switching…
-        </>
-      ) : (
-        <>
-          <svg className="h-4 w-4 transition-transform group-hover:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Next camera
-        </>
-      )}
-    </button>
+      Quality: ⚙ in the player
+    </div>
   );
 }

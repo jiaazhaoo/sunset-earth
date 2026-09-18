@@ -24,7 +24,7 @@ export function AdminLogin() {
   }
 
   return (
-    <form onSubmit={submit} className="flex max-w-md flex-col gap-3 rounded-2xl bg-surface p-5 ring-1 ring-line">
+    <form onSubmit={submit} className="flex max-w-md flex-col gap-3 bg-surface p-5 border border-line">
       <label className="text-sm text-muted" htmlFor="token">
         Admin token (the deployment&apos;s CRON_SECRET)
       </label>
@@ -34,13 +34,13 @@ export function AdminLogin() {
         autoComplete="current-password"
         value={token}
         onChange={(e) => setToken(e.target.value)}
-        className="rounded-lg border border-line bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+        className=" border border-line bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
       />
       {error ? <p className="text-xs text-rose-400">{error}</p> : null}
       <button
         type="submit"
         disabled={busy || !token}
-        className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
+        className=" bg-accent px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
       >
         Sign in
       </button>
