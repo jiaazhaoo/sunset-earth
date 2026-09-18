@@ -323,13 +323,13 @@ export function CameraViewer({ initialCamera }: Props) {
   }, []);
 
   return (
-    <section className="flex w-full flex-col gap-3">
-      {/* One line: next · conditions · where */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+    <section className="flex w-full flex-col gap-4">
+      {/* Status line: next · conditions · where */}
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
         <button
           onClick={handleSwitch}
           disabled={loading}
-          className="shrink-0 border border-line-strong px-3 py-1.5 text-sm font-medium text-foreground transition hover:border-foreground disabled:opacity-50"
+          className="shrink-0 bg-gradient-to-r from-amber-300 via-orange-400 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-60"
         >
           {loading ? "Switching…" : "Next camera →"}
         </button>
@@ -337,49 +337,72 @@ export function CameraViewer({ initialCamera }: Props) {
         <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
 
         <div className="ml-auto min-w-0 text-right">
-          <h1 className="truncate font-medium text-foreground">
+          <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">
             {camera?.name ?? "No active stream"}
-            {camera?.tags?.[0] ? <span className="text-faint"> · {camera.tags[0]}</span> : null}
           </h1>
-          <p className="truncate text-xs text-muted">{location || "Location pending"}</p>
+          <p className="truncate text-xs text-muted">
+            {camera?.tags?.[0] ? <span className="text-amber-300/80">{camera.tags[0]}</span> : null}
+            {camera?.tags?.[0] && location ? " · " : ""}
+            {location || "Location pending"}
+          </p>
         </div>
       </div>
 
       {/* Player — the one rounded thing on the page */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
-        {camera?.embedUrl ? (
-          <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-sm text-muted">
-            No playable camera right now
-          </div>
-        )}
-        <QualityHint key={camera?.id} />
+      <div className="relative">
+        <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
+          {camera?.embedUrl ? (
+            <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-sm text-muted">
+              No playable camera right now
+            </div>
+          )}
+        </div>
+        {/* Resolution note: beside the frame where there is room, under it otherwise. */}
+        <p className="pointer-events-none absolute left-full top-0 ml-5 hidden w-44 text-xs leading-relaxed text-faint 2xl:block">
+          <span className="text-muted">Resolution</span>
+          <br />
+          Use the ⚙ in the player&apos;s control bar.
+        </p>
       </div>
+      <p className="-mt-2 text-right text-[11px] text-faint 2xl:hidden">
+        Resolution: ⚙ in the player&apos;s control bar
+      </p>
 
       {/* Other cameras, ranking order */}
       {others.length ? (
-        <ul className="rail -mx-4 flex gap-2 overflow-x-auto px-4 pt-1 sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0">
-          {others.map((item) => (
-            <li key={item.camera.id} className="w-40 shrink-0 sm:w-auto">
-              <button onClick={() => pick(item)} className="group block w-full text-left">
-                <div className="aspect-video w-full overflow-hidden bg-black">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`https://i.ytimg.com/vi/${extractYoutubeId(item.camera.sourceUrl) ?? ""}/mqdefault.jpg`}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover opacity-80 transition group-hover:opacity-100"
-                  />
-                </div>
-                <p className="mt-1 truncate text-xs text-foreground">{item.camera.name}</p>
-                <p className="truncate text-[11px] text-faint">
-                  {[item.camera.city, item.camera.country].filter(Boolean).join(", ")}
-                  {now ? ` · ${describeSunPhase(item.meta.nextEvent, item.meta.followingEvent, now, item.meta.timezone).title}` : ""}
-                </p>
-              </button>
-            </li>
-          ))}
+        <ul className="rail -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0">
+          {others.map((item) => {
+            const phase = now
+              ? describeSunPhase(item.meta.nextEvent, item.meta.followingEvent, now, item.meta.timezone)
+              : null;
+            return (
+              <li key={item.camera.id} className="w-40 shrink-0 sm:w-auto">
+                <button onClick={() => pick(item)} className="group block w-full text-left">
+                  <div className="aspect-video w-full overflow-hidden bg-black ring-1 ring-transparent transition group-hover:ring-amber-300/70">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`https://i.ytimg.com/vi/${extractYoutubeId(item.camera.sourceUrl) ?? ""}/mqdefault.jpg`}
+                      alt=""
+                      loading="lazy"
+                      className="h-full w-full object-cover opacity-85 transition group-hover:opacity-100"
+                    />
+                  </div>
+                  <p className="mt-1.5 truncate text-sm text-foreground">{item.camera.name}</p>
+                  <p className="truncate text-[11px] text-faint">
+                    {[item.camera.city, item.camera.country].filter(Boolean).join(", ")}
+                    {phase ? (
+                      <>
+                        {" · "}
+                        <span className={toneClass(phase.tone, "text-faint")}>{phase.title}</span>
+                      </>
+                    ) : null}
+                  </p>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </section>
@@ -388,7 +411,12 @@ export function CameraViewer({ initialCamera }: Props) {
 
 type TopCamera = { camera: CameraRecord; meta: CameraMeta };
 
-/** Local time · light · sky, as plain text segments. */
+/** Sunset palette for the light phase: gold for golden hour, violet for blue hour. */
+function toneClass(tone: "golden" | "blue" | "neutral", neutral = "text-foreground") {
+  return tone === "golden" ? "text-amber-300" : tone === "blue" ? "text-violet-300" : neutral;
+}
+
+/** Local time · light · sky — small label over a larger value. */
 function Conditions({
   meta,
   timezone,
@@ -403,47 +431,27 @@ function Conditions({
   const zone = formatZoneAbbr(timezone, now);
   const phase = describeSunPhase(meta?.nextEvent, meta?.followingEvent, now, timezone);
   const sky = describeWeather(meta?.weatherClass);
-  const tone =
-    phase.tone === "golden" ? "text-amber-300" : phase.tone === "blue" ? "text-sky-300" : "text-foreground";
 
   return (
-    <dl className="flex min-w-0 flex-wrap items-baseline gap-x-5 gap-y-1">
-      <div className="flex items-baseline gap-1.5">
-        <dt className="text-xs text-faint">Local</dt>
-        <dd className="tnum text-foreground">{clock}</dd>
-        {zone ? <dd className="text-xs text-faint">{zone}</dd> : null}
+    <dl className="flex min-w-0 flex-wrap items-end gap-x-7 gap-y-2">
+      <div>
+        <dt className="text-[10px] uppercase tracking-[0.18em] text-faint">Local time</dt>
+        <dd className="text-base leading-tight text-foreground">
+          <span className="tnum font-medium">{clock}</span>
+          {zone ? <span className="ml-1.5 text-xs text-faint">{zone}</span> : null}
+        </dd>
       </div>
-      <div className="flex min-w-0 items-baseline gap-1.5">
-        <dt className="text-xs text-faint">Light</dt>
-        <dd className={`truncate ${tone}`}>{phase.title}</dd>
-        <dd className="hidden truncate text-xs text-faint md:block">{phase.detail}</dd>
+      <div className="min-w-0">
+        <dt className="text-[10px] uppercase tracking-[0.18em] text-faint">Light</dt>
+        <dd className="truncate text-base leading-tight">
+          <span className={`font-medium ${toneClass(phase.tone)}`}>{phase.title}</span>
+          <span className="ml-1.5 hidden text-xs text-faint md:inline">{phase.detail}</span>
+        </dd>
       </div>
-      <div className="flex items-baseline gap-1.5">
-        <dt className="text-xs text-faint">Sky</dt>
-        <dd className="text-foreground">{sky.title}</dd>
+      <div>
+        <dt className="text-[10px] uppercase tracking-[0.18em] text-faint">Sky</dt>
+        <dd className="text-base font-medium leading-tight text-foreground">{sky.title}</dd>
       </div>
     </dl>
-  );
-}
-
-/**
- * Points at the player's own settings control for picking a resolution.
- * Sits over the frame but never intercepts clicks, and fades out on its own.
- */
-function QualityHint() {
-  const [visible, setVisible] = useState(true);
-  useEffect(() => {
-    const id = setTimeout(() => setVisible(false), 9000);
-    return () => clearTimeout(id);
-  }, []);
-  return (
-    <div
-      aria-hidden
-      className={`pointer-events-none absolute right-3 top-3 border border-white/20 bg-black/60 px-2 py-1 text-[11px] text-white/80 backdrop-blur-sm transition-opacity duration-700 ${
-        visible ? "opacity-100" : "opacity-0"
-      }`}
-    >
-      Quality: ⚙ in the player
-    </div>
   );
 }

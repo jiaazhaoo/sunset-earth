@@ -67,9 +67,6 @@ export default async function Home({ searchParams }: HomeProps) {
       <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-5 sm:px-6">
         <CameraViewer initialCamera={initialCamera} />
       </main>
-      <footer className="mx-auto w-full max-w-6xl px-4 pb-8 text-xs text-faint sm:px-6">
-        Ranked every few minutes by weather and distance to golden hour · Streams via YouTube · Forecasts via Open-Meteo
-      </footer>
     </>
   );
 }
