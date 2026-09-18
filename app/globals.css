@@ -40,10 +40,7 @@ html {
 
 body {
   min-height: 100dvh;
-  /* Dusk: a little violet at the top fading to near-black. */
-  background:
-    linear-gradient(180deg, rgba(76, 29, 149, 0.16) 0%, rgba(251, 146, 60, 0.05) 28%, transparent 60%),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;

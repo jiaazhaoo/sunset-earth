@@ -299,57 +299,43 @@ export function CameraViewer({ initialCamera }: Props) {
 
   const location = [camera?.city, camera?.country].filter(Boolean).join(", ");
 
-  // Thumbnail strip: the best other cameras right now, in ranking order.
-  const [others, setOthers] = useState<TopCamera[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const exclude = camera?.id ? `&exclude=${encodeURIComponent(camera.id)}` : "";
-    fetch(`/api/top-cameras?limit=10${exclude}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { cameras: [] }))
-      .then((data: { cameras?: TopCamera[] }) => {
-        // Belt and braces: never show the camera that is playing.
-        if (!cancelled) setOthers((data.cameras ?? []).filter((c) => c.camera.id !== camera?.id));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [camera?.id]);
-
-  const pick = useCallback((item: TopCamera) => {
-    setSeen((prev) => (prev.includes(item.camera.id) ? prev : [...prev, item.camera.id]));
-    setCamera(item.camera);
-    setCameraMeta(item.meta);
-  }, []);
-
   return (
-    <section className="flex w-full flex-col gap-4">
-      {/* Status line: next · conditions · where */}
-      <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
-        <button
-          onClick={handleSwitch}
-          disabled={loading}
-          className="shrink-0 bg-gradient-to-r from-amber-300 via-orange-400 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-60"
-        >
-          {loading ? "Switching…" : "Next camera →"}
-        </button>
-
-        <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
-
-        <div className="ml-auto min-w-0 text-right">
-          <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">
+    // Width follows the viewport height so the whole thing fits on one
+    // screen: player + one line of caption, nothing to scroll to.
+    <section
+      className="mx-auto flex w-full flex-col gap-3"
+      style={{ width: "min(100%, calc((100dvh - 12rem) * 16 / 9))" }}
+    >
+      <div className="grid grid-cols-[1fr_auto] items-end gap-x-6 gap-y-2 lg:grid-cols-[1fr_auto_1fr]">
+        <div className="min-w-0">
+          <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">
             {camera?.name ?? "No active stream"}
           </h1>
-          <p className="truncate text-xs text-muted">
-            {camera?.tags?.[0] ? <span className="text-amber-300/80">{camera.tags[0]}</span> : null}
-            {camera?.tags?.[0] && location ? " · " : ""}
+          <p className="truncate text-sm text-muted">
+            {camera?.tags?.[0] ? <>{camera.tags[0]} · </> : null}
             {location || "Location pending"}
           </p>
         </div>
+
+        <div className="order-last col-span-2 lg:order-none lg:col-span-1">
+          <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
+        </div>
+
+        <button
+          onClick={handleSwitch}
+          disabled={loading}
+          className="justify-self-end border border-amber-300/70 px-4 py-2 text-sm font-medium text-amber-200 transition hover:bg-amber-300 hover:text-black disabled:opacity-50"
+        >
+          {loading ? "Switching…" : "Next camera →"}
+        </button>
       </div>
 
-      {/* Player — the one rounded thing on the page */}
+      {/* Player — the one rounded shape on the page, lit from below. */}
       <div className="relative">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-10 -bottom-8 -z-10 h-28 bg-gradient-to-r from-amber-500/30 via-orange-500/25 to-violet-600/30 blur-3xl"
+        />
         <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
           {camera?.embedUrl ? (
             <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
@@ -359,64 +345,25 @@ export function CameraViewer({ initialCamera }: Props) {
             </div>
           )}
         </div>
-        {/* Resolution note: beside the frame where there is room, under it otherwise. */}
         <p className="pointer-events-none absolute left-full top-0 ml-5 hidden w-44 text-xs leading-relaxed text-faint 2xl:block">
           <span className="text-muted">Resolution</span>
           <br />
           Use the ⚙ in the player&apos;s control bar.
         </p>
       </div>
-      <p className="-mt-2 text-right text-[11px] text-faint 2xl:hidden">
+      <p className="-mt-1 text-right text-[11px] text-faint 2xl:hidden">
         Resolution: ⚙ in the player&apos;s control bar
       </p>
-
-      {/* Other cameras, ranking order */}
-      {others.length ? (
-        <ul className="rail -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0">
-          {others.map((item) => {
-            const phase = now
-              ? describeSunPhase(item.meta.nextEvent, item.meta.followingEvent, now, item.meta.timezone)
-              : null;
-            return (
-              <li key={item.camera.id} className="w-40 shrink-0 sm:w-auto">
-                <button onClick={() => pick(item)} className="group block w-full text-left">
-                  <div className="aspect-video w-full overflow-hidden bg-black ring-1 ring-transparent transition group-hover:ring-amber-300/70">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`https://i.ytimg.com/vi/${extractYoutubeId(item.camera.sourceUrl) ?? ""}/mqdefault.jpg`}
-                      alt=""
-                      loading="lazy"
-                      className="h-full w-full object-cover opacity-85 transition group-hover:opacity-100"
-                    />
-                  </div>
-                  <p className="mt-1.5 truncate text-sm text-foreground">{item.camera.name}</p>
-                  <p className="truncate text-[11px] text-faint">
-                    {[item.camera.city, item.camera.country].filter(Boolean).join(", ")}
-                    {phase ? (
-                      <>
-                        {" · "}
-                        <span className={toneClass(phase.tone, "text-faint")}>{phase.title}</span>
-                      </>
-                    ) : null}
-                  </p>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
     </section>
   );
 }
 
-type TopCamera = { camera: CameraRecord; meta: CameraMeta };
-
 /** Sunset palette for the light phase: gold for golden hour, violet for blue hour. */
-function toneClass(tone: "golden" | "blue" | "neutral", neutral = "text-foreground") {
-  return tone === "golden" ? "text-amber-300" : tone === "blue" ? "text-violet-300" : neutral;
+function toneDot(tone: "golden" | "blue" | "neutral") {
+  return tone === "golden" ? "bg-amber-300" : tone === "blue" ? "bg-violet-400" : "bg-faint";
 }
 
-/** Local time · light · sky — small label over a larger value. */
+/** One line: local time · light · sky. */
 function Conditions({
   meta,
   timezone,
@@ -431,27 +378,22 @@ function Conditions({
   const zone = formatZoneAbbr(timezone, now);
   const phase = describeSunPhase(meta?.nextEvent, meta?.followingEvent, now, timezone);
   const sky = describeWeather(meta?.weatherClass);
+  const phaseText =
+    phase.tone === "neutral" ? phase.title : `${phase.title}, ${phase.detail.split(" · ")[0].toLowerCase()}`;
 
   return (
-    <dl className="flex min-w-0 flex-wrap items-end gap-x-7 gap-y-2">
-      <div>
-        <dt className="text-[10px] uppercase tracking-[0.18em] text-faint">Local time</dt>
-        <dd className="text-base leading-tight text-foreground">
-          <span className="tnum font-medium">{clock}</span>
-          {zone ? <span className="ml-1.5 text-xs text-faint">{zone}</span> : null}
-        </dd>
-      </div>
-      <div className="min-w-0">
-        <dt className="text-[10px] uppercase tracking-[0.18em] text-faint">Light</dt>
-        <dd className="truncate text-base leading-tight">
-          <span className={`font-medium ${toneClass(phase.tone)}`}>{phase.title}</span>
-          <span className="ml-1.5 hidden text-xs text-faint md:inline">{phase.detail}</span>
-        </dd>
-      </div>
-      <div>
-        <dt className="text-[10px] uppercase tracking-[0.18em] text-faint">Sky</dt>
-        <dd className="text-base font-medium leading-tight text-foreground">{sky.title}</dd>
-      </div>
-    </dl>
+    <p className="flex flex-wrap items-center gap-x-3 text-sm text-muted lg:justify-center">
+      <span>
+        <span className="tnum text-foreground">{clock}</span>
+        {zone ? <span className="ml-1 text-xs">{zone}</span> : null}
+      </span>
+      <span aria-hidden className="text-faint">·</span>
+      <span className="flex items-center gap-1.5">
+        <span aria-hidden className={`inline-block h-1.5 w-1.5 ${toneDot(phase.tone)}`} />
+        <span className="text-foreground">{phaseText}</span>
+      </span>
+      <span aria-hidden className="text-faint">·</span>
+      <span className="text-foreground">{sky.title}</span>
+    </p>
   );
 }
