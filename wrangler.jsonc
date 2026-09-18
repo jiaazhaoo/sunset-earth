@@ -45,12 +45,16 @@
     "crons": [
       "0 * * * *",
       "0 */3 * * *",
-      "*/5 * * * *"
+      "*/5 * * * *",
+      "0 3 * * 1"
     ]
   },
   // No vars are required. CRON_SECRET is a secret: `wrangler secret put CRON_SECRET`.
   // SITE_URL is optional — nothing calls the deployment by hostname any more.
   // ENABLE_DEV_ROUTES: set to "1" to expose /dev pages and /api/dev routes in
   // production (they probe arbitrary URLs — leave off unless debugging).
+  // ANTHROPIC_API_KEY (secret): lets the weekly /api/discover run read stream
+  // titles with Claude. Without it candidates are parsed heuristically and
+  // always land in the review queue at /admin/candidates.
   "vars": {}
 }

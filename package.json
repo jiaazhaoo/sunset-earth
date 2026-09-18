@@ -14,10 +14,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
     "next": "^16.0.7",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
-    "tz-lookup": "^6.1.25"
+    "tz-lookup": "^6.1.25",
+    "zod": "^4.6.5"
   },
   "overrides": {
     "moment": "2.30.1"

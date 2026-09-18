@@ -15,6 +15,7 @@ const CRON_ROUTES: Record<string, string> = {
   "0 * * * *": "/api/replace-link", // hourly: revalidate + replace broken links
   "0 */3 * * *": "/api/weather-cache", // every 3h: refresh weather/sun caches
   "*/5 * * * *": "/api/compute-rankings", // every 5min: recompute scores
+  "0 3 * * 1": "/api/discover", // weekly (Mon 03:00 UTC): find new cameras, retire stale ones
 };
 
 export default {
