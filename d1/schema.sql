@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS camera_ytb (
   camera_metadata  TEXT,              -- JSON document
   consecutive_failures INTEGER NOT NULL DEFAULT 0, -- soft probe strikes, see lib/linkHealth.ts
   unavailable_since TEXT,             -- ISO-8601 UTC, set on demotion, cleared on restore
-  retired_at       TEXT               -- ISO-8601 UTC, out of the repair queue (lib/discovery.ts)
+  retired_at       TEXT,              -- ISO-8601 UTC, out of the repair queue (lib/discovery.ts)
+  description      TEXT,              -- short intro to the place (lib/wikipedia.ts)
+  description_source TEXT             -- where the description came from (URL)
 );
 
 CREATE INDEX IF NOT EXISTS idx_camera_ytb_available
