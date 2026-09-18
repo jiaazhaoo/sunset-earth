@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { CameraRecord } from "@/lib/cameras";
 import type { CameraMeta } from "@/lib/rankings";
 import { useNow } from "@/components/use-now";
+import { WorldMap, type MapPoint } from "@/components/world-map";
 import {
   describeSunPhase,
   describeWeather,
@@ -301,6 +302,46 @@ export function CameraViewer({ initialCamera }: Props) {
 
   const videoId = extractYoutubeId(camera?.sourceUrl ?? camera?.embedUrl);
 
+  // Every live camera as a faint dot on the map; the one playing glows.
+  const [points, setPoints] = useState<MapPoint[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/cameras", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { cameras: [] }))
+      .then((data: { cameras?: CameraRecord[] }) => {
+        if (cancelled) return;
+        setPoints(
+          (data.cameras ?? [])
+            .filter((c) => c.linkAvailable !== false && c.lat !== null && c.lng !== null)
+            .map((c) => ({ id: c.id, lat: c.lat as number, lng: c.lng as number, name: c.name }))
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const pickById = useCallback(async (id: string) => {
+    if (id === camera?.id) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/best-camera?cameraId=${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const payload = (await response.json()) as BestCameraResponse;
+      setSeen((prev) => (prev.includes(payload.camera.id) ? prev : [...prev, payload.camera.id]));
+      setCamera(payload.camera);
+      setCameraMeta(payload.meta ?? null);
+    } finally {
+      setLoading(false);
+    }
+  }, [camera?.id]);
+
+  const here: MapPoint | null =
+    camera && camera.lat !== null && camera.lng !== null
+      ? { id: camera.id, lat: camera.lat, lng: camera.lng, name: camera.name }
+      : null;
+
   return (
     <>
       {/* The stream's cover, blurred, colours the whole page. */}
@@ -313,7 +354,7 @@ export function CameraViewer({ initialCamera }: Props) {
 
       <section
         className="mx-auto flex w-full flex-col"
-        style={{ width: "min(100%, calc((100dvh - 19rem) * 16 / 9))" }}
+        style={{ width: "min(100%, calc((100dvh - 24rem) * 16 / 9))" }}
       >
         {/* Player — the one rounded shape on the page. */}
         <div className="relative">
@@ -331,8 +372,8 @@ export function CameraViewer({ initialCamera }: Props) {
           </p>
         </div>
 
-        {/* Caption */}
-        <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        {/* Caption: words on the left, the world on the right */}
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-end">
           <div className="min-w-0">
             <h1 className="font-serif text-4xl leading-none tracking-tight text-white sm:truncate sm:text-5xl">
               {camera?.name ?? "No active stream"}
@@ -344,14 +385,23 @@ export function CameraViewer({ initialCamera }: Props) {
             <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
           </div>
 
-          <button
-            onClick={handleSwitch}
-            disabled={loading}
-            className="group shrink-0 self-start border border-white/25 px-5 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50 sm:self-end"
-          >
-            {loading ? "Switching…" : "Next camera"}
-            <span aria-hidden className="ml-2 inline-block transition-transform group-hover:translate-x-1">→</span>
-          </button>
+          <div className="flex flex-col items-end gap-3">
+            <WorldMap
+              current={here}
+              others={points.filter((p) => p.id !== camera?.id)}
+              now={now}
+              onPick={pickById}
+              className="h-auto w-full max-w-[26rem]"
+            />
+            <button
+              onClick={handleSwitch}
+              disabled={loading}
+              className="group shrink-0 border border-white/25 px-5 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50"
+            >
+              {loading ? "Switching…" : "Next camera"}
+              <span aria-hidden className="ml-2 inline-block transition-transform group-hover:translate-x-1">→</span>
+            </button>
+          </div>
         </div>
       </section>
     </>
