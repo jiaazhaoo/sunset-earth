@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 /**
  * Guard for cron and admin routes. Returns a 401 response to send back, or
@@ -35,4 +36,33 @@ export function devToolsEnabled(): boolean {
 /** 404 body for disabled dev routes, indistinguishable from a missing route. */
 export function devToolsDisabledResponse(): NextResponse {
   return NextResponse.json({ error: "Not found" }, { status: 404 });
+}
+
+/** Cookie that carries the admin session for /admin pages and /api/admin. */
+export const ADMIN_COOKIE = "sunset_admin";
+
+/**
+ * Constant-time-ish comparison of the presented token with CRON_SECRET. The
+ * admin surface is one person's review page, so the cron secret doubles as
+ * its password; keep it long and random.
+ */
+export function isAdminToken(token: string | null | undefined): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || !token || token.length !== secret.length) return false;
+  let diff = 0;
+  for (let i = 0; i < secret.length; i++) diff |= secret.charCodeAt(i) ^ token.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Admin access via the session cookie or a bearer token (for curl). */
+export async function isAdminRequest(request: Request): Promise<boolean> {
+  const auth = request.headers.get("Authorization");
+  if (auth?.startsWith("Bearer ") && isAdminToken(auth.slice(7))) return true;
+  const jar = await cookies();
+  return isAdminToken(jar.get(ADMIN_COOKIE)?.value);
+}
+
+export async function isAdminSession(): Promise<boolean> {
+  const jar = await cookies();
+  return isAdminToken(jar.get(ADMIN_COOKIE)?.value);
 }

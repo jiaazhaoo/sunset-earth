@@ -42,7 +42,8 @@ export async function recordProbe(
   if (verdict.available) {
     await execute(
       `UPDATE camera_ytb
-       SET link_available = 1, consecutive_failures = 0, last_check = ?
+       SET link_available = 1, consecutive_failures = 0, unavailable_since = NULL,
+           retired_at = NULL, last_check = ?
        WHERE camera_id = ?`,
       checkedAt,
       camera.id
@@ -66,9 +67,11 @@ export async function recordProbe(
 
   await execute(
     `UPDATE camera_ytb
-     SET link_available = 0, consecutive_failures = ?, last_check = ?
+     SET link_available = 0, consecutive_failures = ?, last_check = ?,
+         unavailable_since = COALESCE(unavailable_since, ?)
      WHERE camera_id = ?`,
     strikes,
+    checkedAt,
     checkedAt,
     camera.id
   );

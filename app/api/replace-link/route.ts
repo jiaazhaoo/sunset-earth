@@ -24,8 +24,8 @@ type RepairDetail = {
  * 1. Verify every camera currently shown (link_available = 1). This is the
  *    only place live streams are re-probed on a schedule — compute-rankings
  *    trusts the flag — so a stream that dies is caught within the hour.
- * 2. Repair every camera that is down (including ones just demoted): host
- *    channel first, then YouTube search. See lib/cameraRefresh.ts.
+ * 2. Repair every camera that is down (including ones just demoted) and not
+ *    retired: host channel first, then YouTube search. See lib/cameraRefresh.ts.
  */
 export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request);
@@ -54,6 +54,11 @@ export async function GET(request: NextRequest) {
 
     for (const camera of cameras) {
       if (camera.linkAvailable !== false && !demotedIds.has(camera.id)) {
+        continue;
+      }
+      // Retired by the weekly discovery run after a month down; the admin
+      // page can bring one back, the hourly sweep does not keep trying.
+      if (camera.retiredAt) {
         continue;
       }
       repair.checked++;

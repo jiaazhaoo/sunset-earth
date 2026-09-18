@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS camera_ytb (
   sunrise_advance  REAL DEFAULT 0,    -- minutes to extend the pre-sunrise window
   last_check       TEXT,              -- ISO-8601 UTC
   camera_metadata  TEXT,              -- JSON document
-  consecutive_failures INTEGER NOT NULL DEFAULT 0 -- soft probe strikes, see lib/linkHealth.ts
+  consecutive_failures INTEGER NOT NULL DEFAULT 0, -- soft probe strikes, see lib/linkHealth.ts
+  unavailable_since TEXT,             -- ISO-8601 UTC, set on demotion, cleared on restore
+  retired_at       TEXT               -- ISO-8601 UTC, out of the repair queue (lib/discovery.ts)
 );
 
 CREATE INDEX IF NOT EXISTS idx_camera_ytb_available
@@ -102,3 +104,8 @@ CREATE TABLE IF NOT EXISTS task_locks (
 
 CREATE INDEX IF NOT EXISTS idx_task_locks_expires_at
   ON task_locks(expires_at);
+
+-- ---------------------------------------------------------------------------
+-- camera_candidates : streams found by /api/discover, pending adoption.
+-- See d1/migrations/0002_candidates_and_retirement.sql for the columns.
+-- ---------------------------------------------------------------------------

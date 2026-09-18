@@ -3,7 +3,7 @@ import { query, queryOne, placeholders, toBool, parseJson } from "@/lib/db";
 import type { CameraMetadata } from "@/lib/camera-metadata-types";
 
 const CAMERA_COLUMNS =
-  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available,sunset_delay,sunrise_advance,last_check,camera_metadata,consecutive_failures";
+  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available,sunset_delay,sunrise_advance,last_check,camera_metadata,consecutive_failures,unavailable_since,retired_at";
 
 export type CameraRow = {
   camera_id: number | string;
@@ -24,6 +24,8 @@ export type CameraRow = {
   sunrise_advance: number | string | null;
   last_check: string | null;
   consecutive_failures: number | null;
+  unavailable_since: string | null;
+  retired_at: string | null;
   /** SQLite stores JSON as TEXT. */
   camera_metadata: string | null;
 };
@@ -47,6 +49,10 @@ export type CameraRecord = {
   lastCheck: string | null;
   /** Soft probe failures in a row; see lib/linkHealth.ts. */
   consecutiveFailures: number;
+  /** When the link was last demoted; null while available. */
+  unavailableSince: string | null;
+  /** Set once a camera has been down long enough to leave the repair queue. */
+  retiredAt: string | null;
   metadata: CameraMetadata | null;
 };
 
@@ -114,6 +120,8 @@ export function buildCameraStub(videoId: string, title?: string | null): CameraR
     sunriseAdvance: 0,
     lastCheck: null,
     consecutiveFailures: 0,
+    unavailableSince: null,
+    retiredAt: null,
     metadata: null,
   };
 }
@@ -164,6 +172,8 @@ function mapCameraRow(row: CameraRow): CameraRecord {
     sunriseAdvance: toNumber(row.sunrise_advance) ?? 0,
     lastCheck: row.last_check ?? null,
     consecutiveFailures: toNumber(row.consecutive_failures) ?? 0,
+    unavailableSince: row.unavailable_since ?? null,
+    retiredAt: row.retired_at ?? null,
     metadata: parseJson<CameraMetadata>(row.camera_metadata),
   };
 }

@@ -37,6 +37,7 @@ Cron Triggers that `worker.ts` dispatches to API routes:
 | `*/5 * * * *` | `/api/compute-rankings` | Score every available camera from cached weather |
 | `0 */3 * * *` | `/api/weather-cache` | Refresh Open-Meteo forecasts |
 | `0 * * * *` | `/api/replace-link` | Probe cameras on air; repair the ones that are down |
+| `0 3 * * 1` | `/api/discover` | Find new cameras; retire ones down for 30 days |
 
 The cron routes iterate every camera and need the paid Workers plan
 (`limits.cpu_ms` in `wrangler.jsonc`); the site itself would run on free.
@@ -64,12 +65,35 @@ Everything that touches `camera_ytb.link_available` goes through
 `npx tsx scripts/find-replacements.ts` dry-runs the repair logic against the
 live database from a workstation without writing anything.
 
+## How new cameras arrive
+
+[`lib/discovery.ts`](lib/discovery.ts), weekly:
+
+1. **Gather** every live stream on the channels we already trust (the
+   `host_link`s of cameras on air — ~80 channels, ~600 streams) plus a
+   rotating slice of YouTube searches.
+2. **Analyse** each stream we have not seen: probe it (playable, embeddable),
+   have Claude read the title into place / city / country / type / tags
+   ([`lib/llm.ts`](lib/llm.ts), needs the `ANTHROPIC_API_KEY` secret), geocode
+   it with Open-Meteo ([`lib/geocode.ts`](lib/geocode.ts)), and reject
+   duplicates of cameras we have within 2 km.
+3. **Decide**: confidence ≥ 0.8 from a trusted channel (≥ 0.9 from search)
+   becomes a `camera_ytb` row on the spot; anything else waits in
+   `camera_candidates` for a click at **`/admin/candidates`** (sign in with
+   `CRON_SECRET`). Without the model key nothing is auto-approved.
+4. **Retire** cameras that have been down for 30 days so the hourly repair
+   sweep stops retrying them; a successful probe un-retires.
+
+Manual run: `curl -H "Authorization: Bearer $CRON_SECRET" "https://sunset-earth.com/api/discover?dry=1"`
+(`limit=N`, `nosearch=1` also accepted).
+
 ## Layout
 
 ```
 app/                Next.js app router
   page.tsx          Homepage: best camera, stats, "up next" rail, timeline
-  api/              Cron routes, viewer endpoints, /api/dev/* (prod: 404)
+  api/              Cron routes, viewer endpoints, /api/admin/* (cookie or bearer), /api/dev/* (prod: 404)
+  admin/candidates  Review queue for discovered streams
 components/         camera-viewer, sun-overview, site-header, use-now
 lib/
   db.ts             D1 access (env.DB)
@@ -81,6 +105,9 @@ lib/
   youtube.ts        Channel/search crawlers, place matching
   cameraRefresh.ts  Replacement pipeline
   linkHealth.ts     Demotion/restoration policy
+  discovery.ts      Weekly new-camera pipeline + retirement
+  llm.ts            Claude title analysis (structured output) + heuristic fallback
+  geocode.ts        Open-Meteo geocoding
   sun-format.ts     Pure formatters for sun phases and clocks
   auth.ts           CRON_SECRET guard, dev-tools gate
 d1/                 schema.sql, migrations/, seed, CSV → SQL generator
