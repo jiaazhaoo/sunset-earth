@@ -72,15 +72,22 @@ live database from a workstation without writing anything.
 1. **Gather** every live stream on the channels we already trust (the
    `host_link`s of cameras on air — ~80 channels, ~600 streams) plus a
    rotating slice of YouTube searches.
-2. **Analyse** each stream we have not seen: probe it (playable, embeddable),
-   have Claude read the title into place / city / country / type / tags
-   ([`lib/llm.ts`](lib/llm.ts), needs the `ANTHROPIC_API_KEY` secret), geocode
-   it with Open-Meteo ([`lib/geocode.ts`](lib/geocode.ts)), and reject
-   duplicates of cameras we have within 2 km.
-3. **Decide**: confidence ≥ 0.8 from a trusted channel (≥ 0.9 from search)
+2. **Analyse** each stream we have not seen: probe it (playable, embeddable,
+   not VR/360), then read the title with the rule engine in
+   [`lib/place-rules.ts`](lib/place-rules.ts): split it into place phrases,
+   geocode them with Open-Meteo ([`lib/geocode.ts`](lib/geocode.ts)), and
+   earn confidence only from agreement — an exact town hit, a second phrase
+   naming its state/country, the host channel's usual country. The type,
+   tags and viewing profile come from title keywords and the geocoder's
+   feature code. No model is needed; if `ANTHROPIC_API_KEY` is set, Claude
+   ([`lib/llm.ts`](lib/llm.ts)) is consulted only for titles the rules could
+   not resolve.
+3. **Decide**: a stream that matches a camera we already have within 2 km
+   either repairs it (if that camera is down) or is dropped as a duplicate.
+   Otherwise confidence ≥ 0.8 from a trusted channel (≥ 0.9 from search)
    becomes a `camera_ytb` row on the spot; anything else waits in
    `camera_candidates` for a click at **`/admin/candidates`** (sign in with
-   `CRON_SECRET`). Without the model key nothing is auto-approved.
+   `CRON_SECRET`).
 4. **Retire** cameras that have been down for 30 days so the hourly repair
    sweep stops retrying them; a successful probe un-retires.
 
@@ -106,7 +113,8 @@ lib/
   cameraRefresh.ts  Replacement pipeline
   linkHealth.ts     Demotion/restoration policy
   discovery.ts      Weekly new-camera pipeline + retirement
-  llm.ts            Claude title analysis (structured output) + heuristic fallback
+  place-rules.ts    Model-free title → place resolution (geocoder as verifier)
+  llm.ts            Optional Claude title analysis for unresolved titles
   geocode.ts        Open-Meteo geocoding
   sun-format.ts     Pure formatters for sun phases and clocks
   auth.ts           CRON_SECRET guard, dev-tools gate

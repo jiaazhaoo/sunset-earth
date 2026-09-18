@@ -5,10 +5,10 @@ import { z } from "zod";
 /**
  * Turn a YouTube live-stream title into the fields a camera_ytb row needs.
  *
- * One classification call per candidate on the weekly discovery run — a few
- * hundred at most — so the most capable model is the right default. When no
- * ANTHROPIC_API_KEY is configured the caller falls back to
- * `analyzeTitleHeuristically`, which is far weaker and never auto-approves.
+ * Optional. lib/place-rules.ts resolves most titles without a model; this is
+ * consulted only when the rules are not confident and ANTHROPIC_API_KEY is
+ * configured. A few dozen calls a week at most, so the most capable model is
+ * the right default.
  */
 
 export const PRIMARY_TYPES = [
@@ -109,52 +109,4 @@ export async function analyzeStreamTitle(input: {
     }
     return null;
   }
-}
-
-/**
- * No-model fallback. Handles the common "Place (City, ST)" and
- * "Place - City, Country" shapes with low confidence so such candidates land
- * in the review queue rather than the camera table.
- */
-export function analyzeTitleHeuristically(title: string): StreamAnalysis {
-  const clean = title
-    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, " ")
-    .replace(/\b(earthcam|live|cam|camera|webcam|stream(ing)?|24\/7|4k|hd|ultra|now)\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .replace(/^[\s:|\-–—]+|[\s:|\-–—]+$/g, "")
-    .trim();
-
-  let placename = clean;
-  let city: string | null = null;
-  let country = "";
-  const paren = /^(.*?)\s*\(([^)]+)\)/.exec(clean);
-  if (paren) {
-    placename = paren[1].trim();
-    const inside = paren[2].split(",").map((s) => s.trim());
-    city = inside[0] || null;
-    country = inside[1] ?? "";
-  } else {
-    const parts = clean.split(/\s*[,|–—-]\s*/).filter(Boolean);
-    if (parts.length >= 2) {
-      placename = parts[0];
-      city = parts[1];
-      country = parts[2] ?? "";
-    }
-  }
-  const compilation = /\b(tour|webcams|cameras|compilation|around the world|top \d+)\b/i.test(title);
-  const resolution = /4k/i.test(title) ? "4k" : "1080p";
-
-  return {
-    isFixedOutdoorView: !compilation,
-    placename: placename || title.slice(0, 60),
-    city,
-    region: null,
-    country,
-    primaryType: "nature",
-    tags: ["Natural Scenery"],
-    resolution,
-    viewingTime: { dayOnly: true, nightOnly: false, noSleepTime: false, anytime: false },
-    weatherTolerance: { clear: true, partlyCloudy: true, lightRain: false, lightSnow: false },
-    confidence: country ? 0.4 : 0.2,
-  };
 }
