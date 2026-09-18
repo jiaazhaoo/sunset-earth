@@ -302,6 +302,23 @@ export function CameraViewer({ initialCamera }: Props) {
 
   const videoId = extractYoutubeId(camera?.sourceUrl ?? camera?.embedUrl);
 
+  // A couple of sentences about the place, so a newcomer knows what they see.
+  const [blurb, setBlurb] = useState<{ description: string | null; source: string | null } | null>(null);
+  useEffect(() => {
+    if (!camera?.id) return;
+    let cancelled = false;
+    setBlurb(null);
+    fetch(`/api/camera-blurb?cameraId=${encodeURIComponent(camera.id)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setBlurb({ description: data.description ?? null, source: data.source ?? null });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [camera?.id]);
+
 
   return (
     <>
@@ -315,7 +332,7 @@ export function CameraViewer({ initialCamera }: Props) {
 
       <section
         className="mx-auto flex w-full flex-col"
-        style={{ width: "min(100%, calc((100dvh - 19rem) * 16 / 9))" }}
+        style={{ width: "min(100%, calc((100dvh - 23rem) * 16 / 9))" }}
       >
         {/* Player — the one rounded shape on the page. */}
         <div className="relative">
@@ -333,35 +350,53 @@ export function CameraViewer({ initialCamera }: Props) {
           </p>
         </div>
 
-        {/* Caption: a small globe, the words, the button */}
-        <div className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex min-w-0 items-center gap-5">
+        {/* Caption: words on the left; map and button stacked on the right. */}
+        <div className="mt-6 grid gap-6 sm:grid-cols-[minmax(0,1fr)_12rem] sm:gap-10">
+          <div className="min-w-0">
+            <h1 className="font-serif text-4xl leading-none tracking-tight text-white sm:text-5xl">
+              {camera?.name ?? "No active stream"}
+            </h1>
+            <p className="mt-2 text-sm text-white/55">
+              {location || "Location pending"}
+              {camera?.tags?.[0] ? <span className="text-white/35"> · {camera.tags[0]}</span> : null}
+            </p>
+            {blurb?.description ? (
+              <p className="mt-3 line-clamp-2 max-w-2xl text-sm leading-relaxed text-white/60">
+                {blurb.description}
+                {blurb.source ? (
+                  <>
+                    {" "}
+                    <a
+                      href={blurb.source}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="whitespace-nowrap text-white/35 underline-offset-2 hover:text-white/70 hover:underline"
+                    >
+                      Wikipedia ↗
+                    </a>
+                  </>
+                ) : null}
+              </p>
+            ) : null}
+            <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
+          </div>
+
+          <div className="flex flex-row items-start gap-4 sm:flex-col sm:items-stretch sm:gap-3">
             <MiniMap
               lat={camera?.lat ?? null}
               lng={camera?.lng ?? null}
               name={camera?.name ?? ""}
-              className="h-24 w-40 sm:h-28 sm:w-48"
+              className="h-[5.75rem] w-40 sm:h-28 sm:w-full"
             />
-            <div className="min-w-0">
-              <h1 className="font-serif text-4xl leading-none tracking-tight text-white sm:truncate sm:text-5xl">
-                {camera?.name ?? "No active stream"}
-              </h1>
-              <p className="mt-2 text-sm text-white/55">
-                {location || "Location pending"}
-                {camera?.tags?.[0] ? <span className="text-white/35"> · {camera.tags[0]}</span> : null}
-              </p>
-              <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
-            </div>
+            <button
+              onClick={handleSwitch}
+              disabled={loading}
+              className="group flex-1 border border-white/25 px-4 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50 sm:flex-none sm:w-full"
+            >
+              {loading ? "Switching…" : "Next camera"}
+              <span aria-hidden className="ml-2 inline-block transition-transform group-hover:translate-x-1">→</span>
+            </button>
           </div>
-
-          <button
-            onClick={handleSwitch}
-            disabled={loading}
-            className="group shrink-0 self-start border border-white/25 px-5 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50 sm:self-end"
-          >
-            {loading ? "Switching…" : "Next camera"}
-            <span aria-hidden className="ml-2 inline-block transition-transform group-hover:translate-x-1">→</span>
-          </button>
         </div>
       </section>
     </>

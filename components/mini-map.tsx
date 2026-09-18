@@ -12,7 +12,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
  */
 
 const STYLE = "https://tiles.openfreemap.org/styles/positron";
-const ZOOM = 9.5;
+// Regional: the city and its surroundings, not the block.
+const ZOOM = 7;
 
 export function MiniMap({
   lat,
@@ -86,7 +87,7 @@ export function MiniMap({
         {/* Soft edge so the light map settles into the dark page. */}
         <div aria-hidden className="pointer-events-none absolute inset-0 shadow-[inset_0_0_24px_rgba(0,0,0,0.18)] transition group-hover:shadow-[inset_0_0_24px_rgba(0,0,0,0.06)]" />
       </a>
-      <p className="mt-1 truncate text-[9px] leading-none text-white/30">
+      <p className="mt-1 truncate text-right text-[9px] leading-none text-white/30">
         ©{" "}
         <a href="https://openfreemap.org" target="_blank" rel="noreferrer noopener" className="hover:text-white/60">OpenFreeMap</a>{" "}
         ·{" "}
