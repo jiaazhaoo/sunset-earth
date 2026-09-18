@@ -78,6 +78,10 @@ export function ExploreClient() {
         <Legend colour="#e5e7eb" label="Daylight" />
         <Legend colour="#52525b" label="Night" />
         <span className="ml-auto">{cameras.length} cameras live · click a dot to watch</span>
+        <span className="basis-full text-[10px] text-white/30">
+          Map © <a href="https://openfreemap.org" className="hover:text-white/60">OpenFreeMap</a> ·{" "}
+          <a href="https://www.openstreetmap.org/copyright" className="hover:text-white/60">OpenStreetMap</a> contributors
+        </span>
       </p>
 
       {saved.length ? (
