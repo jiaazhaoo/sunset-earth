@@ -38,6 +38,14 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${serif.variable} min-h-dvh antialiased`}
       >
         {children}
+        {process.env.NEXT_PUBLIC_CF_BEACON_TOKEN ? (
+          // Cloudflare Web Analytics: no cookies, no fingerprinting.
+          <script
+            defer
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon={JSON.stringify({ token: process.env.NEXT_PUBLIC_CF_BEACON_TOKEN })}
+          />
+        ) : null}
       </body>
     </html>
   );

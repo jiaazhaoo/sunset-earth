@@ -219,9 +219,14 @@ function resolveTimeTier({
     return { tier: 4, label: "daytime", distanceMinutes: 999 };
   }
 
-  // Tier 5: 城市天际线晴朗夜晚
-  if (metadata.primaryType === 'city-skyline' && metadata.viewingTime.anytime && isClear) {
-    return { tier: 5, label: "clear-night-skyline", distanceMinutes: 999 };
+  // Tier 5: 夜景 — 任何标记为 anytime 的机位（亮灯的天际线、港口、地标）
+  // 晴朗夜晚都值得看；极光机位只在夜晚才有意义，晴夜给同样的分。
+  if (isClear && (metadata.viewingTime.anytime || metadata.viewingTime.nightOnly)) {
+    return {
+      tier: 5,
+      label: metadata.viewingTime.nightOnly ? "clear-night-aurora" : "clear-night-view",
+      distanceMinutes: 999,
+    };
   }
 
   // Tier 6: 普通夜晚
@@ -487,8 +492,8 @@ function calculateEnhancedScore(context: ScoreContext): number {
     1: 100,  // 黄金时刻核心
     2: 95,   // 蓝调时刻
     3: 85,   // 扩展黄金时刻
-    4: 70,   // 白天
-    5: 70,   // 城市天际线晴朗夜晚 (从60提升到70)
+    4: 55,   // 白天 — 平淡的正午不该压过一处亮灯的夜景
+    5: 72,   // 晴朗夜景（anytime 机位）/ 极光机位
     6: 30,   // 普通夜晚
   };
 

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { CameraViewer } from "@/components/camera-viewer";
 import { SiteHeader } from "@/components/site-header";
 import {
@@ -6,6 +7,7 @@ import {
   getRandomCamera,
 } from "@/lib/cameras";
 import { fetchAvailableRankings } from "@/lib/rankings";
+import { queryOne } from "@/lib/db";
 import type { CameraRecord } from "@/lib/cameras";
 
 const INITIAL_RANKING_FRESHNESS_MINUTES = 30;
@@ -42,6 +44,38 @@ async function getBestCamera(): Promise<CameraRecord | null> {
 type HomeProps = {
   searchParams: Promise<{ camera?: string }>;
 };
+
+/**
+ * Share cards: a camera link (?camera=ID) gets the camera's name, its place
+ * description and the stream's cover as og:image, so a pasted link shows a
+ * picture of the view instead of a blank card.
+ */
+export async function generateMetadata({ searchParams }: HomeProps): Promise<Metadata> {
+  const params = await searchParams;
+  if (!params?.camera) return {};
+  const camera = await getCameraById(params.camera).catch(() => null);
+  if (!camera) return {};
+  const row = await queryOne<{ description: string | null }>(
+    `SELECT description FROM camera_ytb WHERE camera_id = ?`,
+    camera.id
+  ).catch(() => null);
+  const videoId = camera.sourceUrl?.match(/[?&]v=([\w-]{11})/)?.[1];
+  const where = [camera.city, camera.country].filter(Boolean).join(", ");
+  const title = `${camera.name}${where ? ` — ${where}` : ""} · Sunset Earth`;
+  const description = row?.description || `Live camera in ${where || camera.name}, ranked for golden hour on Sunset Earth.`;
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "video.other",
+      url: `https://sunset-earth.com/?camera=${encodeURIComponent(camera.id)}`,
+      images: videoId ? [{ url: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`, width: 1280, height: 720 }] : undefined,
+    },
+    twitter: { card: "summary_large_image", title, description },
+  };
+}
 
 export default async function Home({ searchParams }: HomeProps) {
   const params = await searchParams;
