@@ -5,6 +5,8 @@ import type { CameraRecord } from "@/lib/cameras";
 import type { CameraMeta } from "@/lib/rankings";
 import { useNow } from "@/components/use-now";
 import { MiniMap } from "@/components/mini-map";
+import { useFavourites } from "@/components/use-favourites";
+import { goldenNow, headlineFor, upcoming, type ScheduledCamera } from "@/lib/sun-schedule";
 import {
   describeSunPhase,
   describeWeather,
@@ -187,6 +189,12 @@ function VideoFrame({
   );
 }
 
+type LiveCamera = ScheduledCamera & { lat: number | null; lng: number | null; videoId: string | null; tag: string | null };
+
+/** How long TV mode stays on one camera before moving to the next. */
+const TV_DWELL_MS = 4 * 60_000;
+const TV_KEY = "sunset-earth:tv";
+
 export function CameraViewer({ initialCamera }: Props) {
   const [camera, setCamera] = useState<CameraRecord | null>(initialCamera);
   const [cameraMeta, setCameraMeta] = useState<CameraMeta | null>(null);
@@ -196,6 +204,7 @@ export function CameraViewer({ initialCamera }: Props) {
     initialCamera?.id ? [initialCamera.id] : []
   );
   const [blacklist, setBlacklist] = useState<string[]>([]);
+  const [fading, setFading] = useState(false);
 
   const excludeQuery = useMemo(() => {
     const ids = [...new Set([...seen, ...blacklist])];
@@ -216,46 +225,62 @@ export function CameraViewer({ initialCamera }: Props) {
     }).catch((error) => console.warn("report player error failed", error));
   }, []);
 
+  // A short dip to black so a change of camera reads as a cut, not a glitch.
+  const withFade = useCallback(async (change: () => Promise<void>) => {
+    setFading(true);
+    await new Promise((r) => setTimeout(r, 350));
+    await change();
+    setTimeout(() => setFading(false), 250);
+  }, []);
+
+  const adopt = useCallback((payload: BestCameraResponse) => {
+    if (payload.rotationReset) {
+      setSeen(payload.camera.id ? [payload.camera.id] : []);
+    } else if (payload.camera.id) {
+      setSeen((prev) => (prev.includes(payload.camera.id) ? prev : [...prev, payload.camera.id]));
+    }
+    setCamera(payload.camera);
+    setCameraMeta(payload.meta ?? null);
+  }, []);
+
   const handleSwitch = useCallback(async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const response = await fetch(`/api/best-camera${excludeQuery}`, {
-        cache: "no-store",
+      await withFade(async () => {
+        const response = await fetch(`/api/best-camera${excludeQuery}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Request failed");
+        adopt((await response.json()) as BestCameraResponse);
       });
-      if (!response.ok) {
-        throw new Error("Request failed");
-      }
-
-      const payload = (await response.json()) as BestCameraResponse;
-      if (payload.rotationReset) {
-        setSeen(payload.camera.id ? [payload.camera.id] : []);
-      } else if (payload.camera.id) {
-        setSeen((prev) =>
-          prev.includes(payload.camera.id)
-            ? prev
-            : [...prev, payload.camera.id]
-        );
-      }
-      setCamera(payload.camera);
-      setCameraMeta(payload.meta ?? null);
     } catch {
       setError("Unable to load another camera right now. Please try again soon.");
     } finally {
       setLoading(false);
     }
-  }, [excludeQuery]);
+  }, [excludeQuery, withFade, adopt]);
+
+  const switchTo = useCallback(
+    async (id: string) => {
+      if (!id || id === camera?.id) return;
+      setLoading(true);
+      try {
+        await withFade(async () => {
+          const response = await fetch(`/api/best-camera?cameraId=${encodeURIComponent(id)}`, { cache: "no-store" });
+          if (!response.ok) return;
+          adopt((await response.json()) as BestCameraResponse);
+        });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [camera?.id, withFade, adopt]
+  );
 
   const handleStreamFailure = useCallback(
     async (errorCode?: number) => {
       if (camera?.id) {
-        setBlacklist((prev) =>
-          prev.includes(camera.id) ? prev : [...prev, camera.id]
-        );
-        if (typeof errorCode === "number") {
-          reportPlayerError(camera.id, errorCode);
-        }
+        setBlacklist((prev) => (prev.includes(camera.id) ? prev : [...prev, camera.id]));
+        if (typeof errorCode === "number") reportPlayerError(camera.id, errorCode);
       }
       await handleSwitch();
     },
@@ -267,22 +292,14 @@ export function CameraViewer({ initialCamera }: Props) {
       setCameraMeta(null);
       return;
     }
-    if (cameraMeta?.cameraId === camera.id) {
-      return;
-    }
+    if (cameraMeta?.cameraId === camera.id) return;
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch(`/api/best-camera?cameraId=${camera.id}`, {
-          cache: "no-store",
-        });
-        if (!response.ok || cancelled) {
-          return;
-        }
+        const response = await fetch(`/api/best-camera?cameraId=${camera.id}`, { cache: "no-store" });
+        if (!response.ok || cancelled) return;
         const payload = (await response.json()) as BestCameraResponse;
-        if (!cancelled) {
-          setCameraMeta(payload.meta ?? null);
-        }
+        if (!cancelled) setCameraMeta(payload.meta ?? null);
       } catch (err) {
         console.warn("fetch camera meta failed", err);
       }
@@ -292,15 +309,39 @@ export function CameraViewer({ initialCamera }: Props) {
     };
   }, [camera?.id, cameraMeta?.cameraId]);
 
-  const activeTimezone =
-    camera?.timezone ?? cameraMeta?.timezone ?? null;
-
-
+  const activeTimezone = camera?.timezone ?? cameraMeta?.timezone ?? null;
   const now = useNow(1000);
-
   const location = [camera?.city, camera?.country].filter(Boolean).join(", ");
-
   const videoId = extractYoutubeId(camera?.sourceUrl ?? camera?.embedUrl);
+
+  // Everything on air, refreshed every few minutes: feeds the headline's
+  // "next sunset" and TV mode's queue.
+  const [live, setLive] = useState<LiveCamera[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/live-cameras", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : { cameras: [] }))
+        .then((data: { cameras?: LiveCamera[] }) => {
+          if (!cancelled) setLive(data.cameras ?? []);
+        })
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 5 * 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  const phase = now ? describeSunPhase(cameraMeta?.nextEvent, cameraMeta?.followingEvent, now, activeTimezone) : null;
+  const nextElsewhere = useMemo(() => {
+    if (!now || !phase || phase.tone !== "neutral") return null;
+    const golden = goldenNow(live, now).filter((c) => c.id !== camera?.id);
+    if (golden.length) return { camera: golden[0], live: true as const };
+    const next = upcoming(live, now, "sunset").find((u) => u.camera.id !== camera?.id);
+    return next ? { camera: next.camera, live: false as const, event: next.event } : null;
+  }, [live, now, phase, camera?.id]);
 
   // A couple of sentences about the place, so a newcomer knows what they see.
   const [blurb, setBlurb] = useState<{ description: string | null; source: string | null } | null>(null);
@@ -319,6 +360,59 @@ export function CameraViewer({ initialCamera }: Props) {
     };
   }, [camera?.id]);
 
+  // --- TV mode: sit back, it moves to the next golden hour on its own. ----
+  const [tv, setTv] = useState(false);
+  useEffect(() => {
+    try {
+      setTv(window.localStorage.getItem(TV_KEY) === "1");
+    } catch {}
+  }, []);
+  const toggleTv = useCallback(() => {
+    setTv((v) => {
+      try {
+        window.localStorage.setItem(TV_KEY, v ? "0" : "1");
+      } catch {}
+      return !v;
+    });
+  }, []);
+  const tvNext = useCallback(async () => {
+    if (!now) return;
+    const queue = goldenNow(live, now).filter((c) => c.id !== camera?.id && !seen.slice(-8).includes(c.id));
+    if (queue.length) await switchTo(queue[0].id);
+    else await handleSwitch();
+  }, [now, live, camera?.id, seen, switchTo, handleSwitch]);
+  const tvNextRef = useRef(tvNext);
+  tvNextRef.current = tvNext;
+  useEffect(() => {
+    if (!tv) return;
+    const id = setInterval(() => {
+      tvNextRef.current();
+    }, TV_DWELL_MS);
+    return () => clearInterval(id);
+  }, [tv, camera?.id]);
+
+  // --- Keyboard: → next · T tv mode · F fullscreen · S save ----------------
+  const { toggle: toggleFavourite, has: isFavourite } = useFavourites();
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else document.documentElement.requestFullscreen?.().catch(() => {});
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowRight" || e.key === "n") handleSwitch();
+      else if (e.key === "t") toggleTv();
+      else if (e.key === "f") toggleFullscreen();
+      else if (e.key === "s" && camera?.id) toggleFavourite(camera.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleSwitch, toggleTv, toggleFullscreen, toggleFavourite, camera?.id]);
+
+  const eyebrow = phase && now ? headlineFor(phase, now) : null;
+  const eyebrowTone = phase?.tone === "golden" ? "text-amber-300" : phase?.tone === "blue" ? "text-violet-300" : "text-white/50";
 
   return (
     <>
@@ -344,15 +438,36 @@ export function CameraViewer({ initialCamera }: Props) {
                 No playable camera right now
               </div>
             )}
+            <div
+              aria-hidden
+              className={`pointer-events-none absolute inset-0 bg-black transition-opacity duration-300 ${fading ? "opacity-100" : "opacity-0"}`}
+            />
           </div>
           <p className="pointer-events-none absolute left-full top-0 ml-6 hidden w-40 text-[11px] leading-relaxed text-white/35 2xl:block">
             Resolution: the ⚙ in the player&apos;s control bar.
+            <br />
+            <span className="text-white/25">→ next · T tv · F fullscreen · S save</span>
           </p>
         </div>
 
-        {/* Caption: words on the left; map and button stacked on the right. */}
-        <div className="mt-6 grid gap-6 sm:grid-cols-[minmax(0,1fr)_12rem] sm:gap-10">
+        {/* Caption: words on the left; map and controls stacked on the right. */}
+        <div className="fs-hide mt-6 grid gap-6 sm:grid-cols-[minmax(0,1fr)_12rem] sm:gap-10">
           <div className="min-w-0">
+            {eyebrow ? (
+              <p className={`mb-2 text-[11px] font-medium uppercase tracking-[0.22em] ${eyebrowTone}`}>
+                {eyebrow}
+                {nextElsewhere ? (
+                  <>
+                    <span className="text-white/25"> · </span>
+                    <button onClick={() => switchTo(nextElsewhere.camera.id)} className="normal-case tracking-normal text-white/60 underline-offset-2 hover:text-amber-200 hover:underline">
+                      {nextElsewhere.live
+                        ? `Golden hour now in ${nextElsewhere.camera.city ?? nextElsewhere.camera.name} →`
+                        : `Next sunset: ${nextElsewhere.camera.city ?? nextElsewhere.camera.name} ${now ? formatRelativeShort(nextElsewhere.event.timeISO, now) : ""} →`}
+                    </button>
+                  </>
+                ) : null}
+              </p>
+            ) : null}
             <h1 className="font-serif text-4xl leading-none tracking-tight text-white sm:text-5xl">
               {camera?.name ?? "No active stream"}
             </h1>
@@ -366,12 +481,7 @@ export function CameraViewer({ initialCamera }: Props) {
                 {blurb.source ? (
                   <>
                     {" "}
-                    <a
-                      href={blurb.source}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="whitespace-nowrap text-white/35 underline-offset-2 hover:text-white/70 hover:underline"
-                    >
+                    <a href={blurb.source} target="_blank" rel="noreferrer noopener" className="whitespace-nowrap text-white/35 underline-offset-2 hover:text-white/70 hover:underline">
                       Wikipedia ↗
                     </a>
                   </>
@@ -382,25 +492,53 @@ export function CameraViewer({ initialCamera }: Props) {
           </div>
 
           <div className="flex flex-row items-start gap-4 sm:flex-col sm:items-stretch sm:gap-3">
-            <MiniMap
-              lat={camera?.lat ?? null}
-              lng={camera?.lng ?? null}
-              name={camera?.name ?? ""}
-              className="h-[5.75rem] w-40 sm:h-28 sm:w-full"
-            />
-            <button
-              onClick={handleSwitch}
-              disabled={loading}
-              className="group flex-1 border border-white/25 px-4 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50 sm:flex-none sm:w-full"
-            >
-              {loading ? "Switching…" : "Next camera"}
-              <span aria-hidden className="ml-2 inline-block transition-transform group-hover:translate-x-1">→</span>
-            </button>
+            <MiniMap lat={camera?.lat ?? null} lng={camera?.lng ?? null} name={camera?.name ?? ""} className="h-[5.75rem] w-40 sm:h-28 sm:w-full" />
+            <div className="flex flex-1 flex-col gap-2 sm:flex-none">
+              <button
+                onClick={handleSwitch}
+                disabled={loading}
+                className="group w-full border border-white/25 px-4 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50"
+              >
+                {loading ? "Switching…" : "Next camera"}
+                <span aria-hidden className="ml-2 inline-block transition-transform group-hover:translate-x-1">→</span>
+              </button>
+              <div className="flex gap-2 text-xs">
+                <button
+                  onClick={toggleTv}
+                  aria-pressed={tv}
+                  title="TV mode: moves to the next golden hour every few minutes (T)"
+                  className={`flex-1 border px-2 py-1.5 transition ${tv ? "border-amber-300 bg-amber-300 text-black" : "border-white/20 text-white/70 hover:border-white/50"}`}
+                >
+                  {tv ? "TV on" : "TV mode"}
+                </button>
+                <button
+                  onClick={() => camera?.id && toggleFavourite(camera.id)}
+                  aria-pressed={camera ? isFavourite(camera.id) : false}
+                  title="Save this camera (S)"
+                  className={`flex-1 border px-2 py-1.5 transition ${camera && isFavourite(camera.id) ? "border-rose-300 text-rose-300" : "border-white/20 text-white/70 hover:border-white/50"}`}
+                >
+                  {camera && isFavourite(camera.id) ? "♥ Saved" : "♡ Save"}
+                </button>
+                <button
+                  onClick={toggleFullscreen}
+                  title="Fullscreen (F)"
+                  className="border border-white/20 px-2 py-1.5 text-white/70 transition hover:border-white/50"
+                >
+                  ⛶
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
     </>
   );
+}
+
+function formatRelativeShort(iso: string, now: Date): string {
+  const min = Math.round((Date.parse(iso) - now.getTime()) / 60_000);
+  if (min <= 0) return "now";
+  return min < 60 ? `in ${min} min` : `in ${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")}`;
 }
 
 /** One line under the name: local time · light · sky, with a sun-position bar. */

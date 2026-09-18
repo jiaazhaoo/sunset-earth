@@ -56,5 +56,8 @@
   // ANTHROPIC_API_KEY (secret): lets the weekly /api/discover run read stream
   // titles with Claude. Without it candidates are parsed heuristically and
   // always land in the review queue at /admin/candidates.
+  // NEXT_PUBLIC_CF_BEACON_TOKEN: Cloudflare Web Analytics beacon token
+  // (dashboard → Analytics & Logs → Web Analytics → Add a site → manual
+  // setup, copy the token). Build-time, so it goes here, not in secrets.
   "vars": {}
 }
