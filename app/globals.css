@@ -6,7 +6,7 @@
  * the top rule, the action button and the light phase, nothing else.
  */
 :root {
-  --background: #09090b;
+  --background: #000000;
   --foreground: #fafafa;
   --muted: #a1a1aa;
   --faint: #71717a;
@@ -32,6 +32,7 @@
   --color-accent-2: var(--accent-2);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-serif: var(--font-instrument), "Iowan Old Style", Georgia, serif;
 }
 
 html {
@@ -40,7 +41,8 @@ html {
 
 body {
   min-height: 100dvh;
-  background: var(--background);
+  /* No background here: the html canvas is black and .ambient (z -1) must
+     paint above it but below the content. */
   color: var(--foreground);
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;
@@ -58,4 +60,28 @@ body {
 /* Tabular digits for anything that ticks. */
 .tnum {
   font-variant-numeric: tabular-nums;
+}
+
+/* The stream's own cover, blurred and dimmed, as the room the player sits in. */
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background: #000;
+}
+.ambient img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.25);
+  filter: blur(60px) saturate(1.3) brightness(0.55);
+  opacity: 0.55;
+  transition: opacity 1.2s ease;
+}
+.ambient::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0.55) 60%, rgba(0, 0, 0, 0.85) 100%);
 }

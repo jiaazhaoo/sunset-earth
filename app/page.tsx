@@ -64,7 +64,7 @@ export default async function Home({ searchParams }: HomeProps) {
   return (
     <>
       <SiteHeader liveCount={liveCount} />
-      <main className="mx-auto flex min-h-[calc(100dvh-3rem)] w-full max-w-6xl items-start px-4 pb-10 pt-6 sm:px-6 lg:items-center lg:pt-0">
+      <main className="mx-auto flex min-h-dvh w-full max-w-[1400px] items-start px-5 pb-10 pt-20 sm:px-8 lg:items-center lg:pt-14">
         <CameraViewer initialCamera={initialCamera} />
       </main>
     </>

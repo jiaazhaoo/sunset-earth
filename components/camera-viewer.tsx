@@ -299,71 +299,66 @@ export function CameraViewer({ initialCamera }: Props) {
 
   const location = [camera?.city, camera?.country].filter(Boolean).join(", ");
 
+  const videoId = extractYoutubeId(camera?.sourceUrl ?? camera?.embedUrl);
+
   return (
-    // Width follows the viewport height so the whole thing fits on one
-    // screen: player + one line of caption, nothing to scroll to.
-    <section
-      className="mx-auto flex w-full flex-col gap-3"
-      style={{ width: "min(100%, calc((100dvh - 12rem) * 16 / 9))" }}
-    >
-      <div className="grid grid-cols-[1fr_auto] items-end gap-x-6 gap-y-2 lg:grid-cols-[1fr_auto_1fr]">
-        <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">
-            {camera?.name ?? "No active stream"}
-          </h1>
-          <p className="truncate text-sm text-muted">
-            {camera?.tags?.[0] ? <>{camera.tags[0]} · </> : null}
-            {location || "Location pending"}
+    <>
+      {/* The stream's cover, blurred, colours the whole page. */}
+      <div className="ambient" aria-hidden>
+        {videoId ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={videoId} src={`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`} alt="" />
+        ) : null}
+      </div>
+
+      <section
+        className="mx-auto flex w-full flex-col"
+        style={{ width: "min(100%, calc((100dvh - 19rem) * 16 / 9))" }}
+      >
+        {/* Player — the one rounded shape on the page. */}
+        <div className="relative">
+          <div className="aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-[0_40px_120px_-30px_rgba(0,0,0,0.9)] ring-1 ring-white/10">
+            {camera?.embedUrl ? (
+              <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-sm text-white/50">
+                No playable camera right now
+              </div>
+            )}
+          </div>
+          <p className="pointer-events-none absolute left-full top-0 ml-6 hidden w-40 text-[11px] leading-relaxed text-white/35 2xl:block">
+            Resolution: the ⚙ in the player&apos;s control bar.
           </p>
         </div>
 
-        <div className="order-last col-span-2 lg:order-none lg:col-span-1">
-          <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
-        </div>
+        {/* Caption */}
+        <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="font-serif text-4xl leading-none tracking-tight text-white sm:truncate sm:text-5xl">
+              {camera?.name ?? "No active stream"}
+            </h1>
+            <p className="mt-2 text-sm text-white/55">
+              {location || "Location pending"}
+              {camera?.tags?.[0] ? <span className="text-white/35"> · {camera.tags[0]}</span> : null}
+            </p>
+            <Conditions meta={cameraMeta} timezone={activeTimezone} now={now} />
+          </div>
 
-        <button
-          onClick={handleSwitch}
-          disabled={loading}
-          className="justify-self-end border border-amber-300/70 px-4 py-2 text-sm font-medium text-amber-200 transition hover:bg-amber-300 hover:text-black disabled:opacity-50"
-        >
-          {loading ? "Switching…" : "Next camera →"}
-        </button>
-      </div>
-
-      {/* Player — the one rounded shape on the page, lit from below. */}
-      <div className="relative">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-10 -bottom-8 -z-10 h-28 bg-gradient-to-r from-amber-500/30 via-orange-500/25 to-violet-600/30 blur-3xl"
-        />
-        <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
-          {camera?.embedUrl ? (
-            <VideoFrame camera={camera} onStreamError={handleStreamFailure} />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-sm text-muted">
-              No playable camera right now
-            </div>
-          )}
+          <button
+            onClick={handleSwitch}
+            disabled={loading}
+            className="group shrink-0 self-start border border-white/25 px-5 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50 sm:self-end"
+          >
+            {loading ? "Switching…" : "Next camera"}
+            <span aria-hidden className="ml-2 inline-block transition-transform group-hover:translate-x-1">→</span>
+          </button>
         </div>
-        <p className="pointer-events-none absolute left-full top-0 ml-5 hidden w-44 text-xs leading-relaxed text-faint 2xl:block">
-          <span className="text-muted">Resolution</span>
-          <br />
-          Use the ⚙ in the player&apos;s control bar.
-        </p>
-      </div>
-      <p className="-mt-1 text-right text-[11px] text-faint 2xl:hidden">
-        Resolution: ⚙ in the player&apos;s control bar
-      </p>
-    </section>
+      </section>
+    </>
   );
 }
 
-/** Sunset palette for the light phase: gold for golden hour, violet for blue hour. */
-function toneDot(tone: "golden" | "blue" | "neutral") {
-  return tone === "golden" ? "bg-amber-300" : tone === "blue" ? "bg-violet-400" : "bg-faint";
-}
-
-/** One line: local time · light · sky. */
+/** One line under the name: local time · light · sky, with a sun-position bar. */
 function Conditions({
   meta,
   timezone,
@@ -379,21 +374,37 @@ function Conditions({
   const phase = describeSunPhase(meta?.nextEvent, meta?.followingEvent, now, timezone);
   const sky = describeWeather(meta?.weatherClass);
   const phaseText =
-    phase.tone === "neutral" ? phase.title : `${phase.title}, ${phase.detail.split(" · ")[0].toLowerCase()}`;
+    phase.tone === "neutral" ? phase.title : `${phase.title} — ${phase.detail.split(" · ")[0].toLowerCase()}`;
+  const accent = phase.tone === "golden" ? "text-amber-300" : phase.tone === "blue" ? "text-violet-300" : "text-white/85";
+
+  // Where the local day is: sunrise at 0, sunset at 1, night beyond.
+  const sunrise = meta?.sunrise ? Date.parse(meta.sunrise) : NaN;
+  const sunset = meta?.sunset ? Date.parse(meta.sunset) : NaN;
+  const progress =
+    Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise
+      ? Math.max(0, Math.min(1, (now.getTime() - sunrise) / (sunset - sunrise)))
+      : null;
 
   return (
-    <p className="flex flex-wrap items-center gap-x-3 text-sm text-muted lg:justify-center">
-      <span>
-        <span className="tnum text-foreground">{clock}</span>
-        {zone ? <span className="ml-1 text-xs">{zone}</span> : null}
-      </span>
-      <span aria-hidden className="text-faint">·</span>
-      <span className="flex items-center gap-1.5">
-        <span aria-hidden className={`inline-block h-1.5 w-1.5 ${toneDot(phase.tone)}`} />
-        <span className="text-foreground">{phaseText}</span>
-      </span>
-      <span aria-hidden className="text-faint">·</span>
-      <span className="text-foreground">{sky.title}</span>
-    </p>
+    <div className="mt-4 flex flex-col gap-2.5">
+      <p className="flex flex-wrap items-center gap-x-3 text-sm text-white/70">
+        <span>
+          <span className="tnum text-white">{clock}</span>
+          {zone ? <span className="ml-1 text-xs text-white/45">{zone}</span> : null}
+        </span>
+        <span aria-hidden className="text-white/25">·</span>
+        <span className={accent}>{phaseText}</span>
+        <span aria-hidden className="text-white/25">·</span>
+        <span>{sky.title}</span>
+      </p>
+      {progress !== null ? (
+        <div className="relative h-px w-56 max-w-full bg-gradient-to-r from-violet-500/70 via-amber-300 to-violet-500/70" aria-hidden>
+          <span
+            className="absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 bg-amber-200 shadow-[0_0_10px_rgba(253,230,138,0.9)]"
+            style={{ left: `${progress * 100}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
