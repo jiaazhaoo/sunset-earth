@@ -358,6 +358,21 @@ function keywordCoverage(reference: string, candidate: Set<string>): number {
 }
 
 /**
+ * News and event broadcasts name landmarks all the time ("LIVE: President
+ * leaves White House briefing") without ever showing a fixed view of them.
+ * Anything that reads like coverage rather than a camera is out.
+ */
+const BROADCAST_WORDS =
+  /\b(news|breaking|briefing|press conference|speech|coverage|debate|rally|hearing|election|parliament|congress|senate|president|minister|trump|biden|interview|podcast|talk show|concert|match|game|vs\.?|final|championship|protest|funeral|ceremony|conference)\b/i;
+const BROADCAST_CHANNELS = /\b(news|tv\d*|times|times ?now|cnn|bbc|fox|abc|nbc|cbs|sky|reuters|aljazeera|al jazeera|india today|wion|ndtv|republic|zee)\b/i;
+
+export function looksLikeBroadcast(title: string, channelUrl?: string | null): boolean {
+  if (BROADCAST_WORDS.test(title)) return true;
+  const handle = channelUrl?.match(/youtube\.com\/(?:@|c\/|channel\/|user\/)?([^/?#]+)/)?.[1] ?? "";
+  return BROADCAST_CHANNELS.test(handle.replace(/[_-]/g, " "));
+}
+
+/**
  * How well a live-stream title matches a camera's curated location.
  *
  * Stream titles are verbose ("Boston Weather Cam, MA Live Cam - Green Line")

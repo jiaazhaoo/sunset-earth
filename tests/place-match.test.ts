@@ -48,3 +48,13 @@ describe("calculatePlaceMatch", () => {
     expect(calculatePlaceMatch("Han River View", "Seoul", "🔴 Seoul 4K LIVE | Han River | 서울 한강")).toBeGreaterThanOrEqual(0.7);
   });
 });
+
+describe("looksLikeBroadcast", () => {
+  it("rejects news and event coverage that merely names a landmark", async () => {
+    const { looksLikeBroadcast } = await import("@/lib/youtube");
+    expect(looksLikeBroadcast("LIVE: President Suddenly Leaves White House Briefing | US News LIVE", "https://www.youtube.com/@TimesNow")).toBe(true);
+    expect(looksLikeBroadcast("Times Square live cam", "https://www.youtube.com/@earthcam")).toBe(false);
+    expect(looksLikeBroadcast("earthTV® White House Cam is back!", "https://www.youtube.com/@earthTV")).toBe(false);
+    expect(looksLikeBroadcast("Anything at all", "https://www.youtube.com/@WION")).toBe(true);
+  });
+});
