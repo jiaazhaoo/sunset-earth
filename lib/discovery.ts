@@ -2,12 +2,8 @@ import { isCameraAvailable } from "@/lib/availability";
 import { buildCameraStub } from "@/lib/cameras";
 import { execute, query, queryOne, nowIso, parseJson } from "@/lib/db";
 import { distanceKm, locateCandidate, type GeocodeHit } from "@/lib/geocode";
-import {
-  analyzeStreamTitle,
-  analyzeTitleHeuristically,
-  llmConfigured,
-  type StreamAnalysis,
-} from "@/lib/llm";
+import { analyzeStreamTitle, llmConfigured, type StreamAnalysis } from "@/lib/llm";
+import { analyzeTitleByRules } from "@/lib/place-rules";
 import {
   calculatePlaceMatch,
   fetchChannelLiveCandidates,
@@ -22,8 +18,10 @@ import type { CameraMetadata } from "@/lib/camera-metadata-types";
  *
  *   gather   → every live stream on the channels we already trust, plus a
  *              rotating slice of site-wide searches
- *   analyse  → playable + embeddable?  →  Claude reads the title  →
- *              Open-Meteo geocodes the place  →  duplicate check
+ *   analyse  → playable + embeddable?  →  rule engine reads the title with
+ *              the geocoder as lie detector (lib/place-rules.ts); if that is
+ *              not confident and a model key exists, Claude reads it  →
+ *              duplicate check
  *   decide   → auto-approve (row in camera_ytb) / pending / rejected
  *
  * Every step is idempotent on video_id, so re-runs and partial runs are safe.
@@ -84,6 +82,8 @@ export type DiscoverySummary = {
   newCandidates: number;
   analysed: number;
   approved: number;
+  /** Down cameras brought back with a discovered stream. */
+  repaired: number;
   pending: number;
   rejected: Record<string, number>;
   retired: number;
@@ -93,7 +93,7 @@ export type DiscoverySummary = {
 };
 
 export type DiscoveryOptions = {
-  /** Stop after analysing this many new streams (subrequest budget). */
+  /** Stop after analysing this many new streams (subrequest budget, ~8 each). */
   maxNew?: number;
   /** Skip site-wide search, crawl known channels only. */
   noSearch?: boolean;
@@ -102,10 +102,10 @@ export type DiscoveryOptions = {
 };
 
 export async function runDiscovery(options: DiscoveryOptions = {}): Promise<DiscoverySummary> {
-  const maxNew = options.maxNew ?? 60;
+  const maxNew = options.maxNew ?? 40;
   const summary: DiscoverySummary = {
     channelsCrawled: 0, searchesRun: 0, seen: 0, newCandidates: 0, analysed: 0,
-    approved: 0, pending: 0, rejected: {}, retired: 0, llm: llmConfigured(), details: [],
+    approved: 0, repaired: 0, pending: 0, rejected: {}, retired: 0, llm: llmConfigured(), details: [],
   };
 
   // --- gather -------------------------------------------------------------
@@ -143,18 +143,15 @@ export async function runDiscovery(options: DiscoveryOptions = {}): Promise<Disc
 
   // --- analyse + decide ---------------------------------------------------
   const existing = await existingCameraPlaces();
+  const priors = await channelCountries();
+  const geocodeCache = new Map<string, Promise<GeocodeHit[]>>();
   for (const video of fresh) {
-    const result = await analyseCandidate(video, existing);
+    const result = await analyseCandidate(video, existing, {
+      priorCountry: video.channelUrl ? priors.get(channelKey(video.channelUrl)) ?? null : null,
+      geocodeCache,
+    });
     summary.analysed++;
     const detail = { videoId: video.videoId, title: video.title, outcome: result.status as string, placename: result.placename ?? undefined };
-    // Without a model the heuristic parser cannot vouch for a location. Do
-    // not record those as rejected — leave them unknown so the run after
-    // ANTHROPIC_API_KEY is configured reads them properly.
-    if (!summary.llm && result.rejectReason === "low-confidence") {
-      detail.outcome = "skipped:no-model";
-      summary.details.push(detail);
-      continue;
-    }
     if (result.status === "rejected") {
       summary.rejected[result.rejectReason ?? "unknown"] = (summary.rejected[result.rejectReason ?? "unknown"] ?? 0) + 1;
       detail.outcome = `rejected:${result.rejectReason}`;
@@ -167,10 +164,19 @@ export async function runDiscovery(options: DiscoveryOptions = {}): Promise<Disc
 
     if (options.dryRun) continue;
     const id = await insertCandidate(video, result);
+    const repairs = result.rejectReason?.startsWith("repairs:") ? result.rejectReason.slice(8) : null;
+    if (repairs) {
+      const ok = await adoptStreamForCamera(repairs, video);
+      if (ok) {
+        summary.repaired++;
+        const e = existing.find((x) => x.camera_id === repairs);
+        if (e) e.link_available = true;
+      }
+    }
     if (result.status === "approved" && id !== null) {
       const cameraId = await approveCandidate(id, "auto");
       if (cameraId && result.latitude !== null && result.longitude !== null) {
-        existing.push({ camera_id: cameraId, placename: result.placename ?? "", city: result.city, latitude: result.latitude, longitude: result.longitude });
+        existing.push({ camera_id: cameraId, placename: result.placename ?? "", city: result.city, latitude: result.latitude, longitude: result.longitude, link_available: true });
       }
     }
   }
@@ -183,7 +189,14 @@ export async function runDiscovery(options: DiscoveryOptions = {}): Promise<Disc
 
 /* ---------------------------------------------------------------------- */
 
-type ExistingPlace = { camera_id: string; placename: string; city: string | null; latitude: number; longitude: number };
+type ExistingPlace = {
+  camera_id: string;
+  placename: string;
+  city: string | null;
+  latitude: number;
+  longitude: number;
+  link_available: boolean;
+};
 
 type Decision = {
   status: CandidateStatus;
@@ -203,7 +216,8 @@ type Decision = {
 
 async function analyseCandidate(
   video: LiveVideoInfo & { source: "channel" | "search" },
-  existing: ExistingPlace[]
+  existing: ExistingPlace[],
+  ctx: { priorCountry: string | null; geocodeCache: Map<string, Promise<GeocodeHit[]>> }
 ): Promise<Decision> {
   const reject = (reason: string, partial: Partial<Decision> = {}): Decision => ({
     status: "rejected", decidedBy: "auto", rejectReason: reason,
@@ -215,30 +229,65 @@ async function analyseCandidate(
   const probe = await isCameraAvailable(buildCameraStub(video.videoId, video.title));
   if (!probe.available) return reject(`unplayable:${probe.reason}`);
 
-  // 2. Read the title.
-  const llm = await analyzeStreamTitle({
-    title: video.title,
-    channelUrl: video.channelUrl ?? null,
-    channelName: video.channelUrl?.split("/").pop() ?? null,
+  // 2. Read the title. Rules first — geocoding doubles as verification —
+  //    and only if they are not confident, the model (when configured).
+  const bar = video.source === "channel" ? AUTO_APPROVE_CHANNEL : AUTO_APPROVE_SEARCH;
+  const rules = await analyzeTitleByRules(video.title, {
+    priorCountry: ctx.priorCountry,
+    cache: ctx.geocodeCache,
   });
-  const analysis: StreamAnalysis = llm ?? analyzeTitleHeuristically(video.title);
-  const base: Record<string, unknown> = { model: llm ? "claude-opus-5" : "heuristic", analysis };
+  let analysis: StreamAnalysis = rules;
+  let hit: GeocodeHit | null = rules.hit;
+  let how = "rules";
+  const base: Record<string, unknown> = { rules: { ...rules, hit: undefined }, evidence: rules.evidence };
+
+  if (rules.confidence < bar && llmConfigured()) {
+    const llm = await analyzeStreamTitle({
+      title: video.title,
+      channelUrl: video.channelUrl ?? null,
+      channelName: video.channelUrl?.split("/").pop() ?? null,
+    });
+    if (llm && llm.confidence > rules.confidence) {
+      analysis = llm;
+      how = "claude-opus-5";
+      base.model = llm;
+      const located = await locateCandidate(llm);
+      hit = located?.hit ?? null;
+      if (!hit) return reject("geocode-failed", { analysis: base, confidence: llm.confidence, placename: llm.placename, city: llm.city, country: llm.country });
+    }
+  }
+  base.how = how;
 
   if (!analysis.isFixedOutdoorView) return reject("not-fixed-view", { analysis: base, confidence: analysis.confidence });
-  if (analysis.confidence < MIN_CONFIDENCE) return reject("low-confidence", { analysis: base, confidence: analysis.confidence });
+  if (!hit || analysis.confidence < MIN_CONFIDENCE) {
+    return reject("low-confidence", { analysis: base, confidence: analysis.confidence, placename: analysis.placename, city: analysis.city, country: analysis.country });
+  }
 
-  // 3. Coordinates and timezone.
-  const located = await locateCandidate(analysis);
-  if (!located) return reject("geocode-failed", { analysis: base, confidence: analysis.confidence, placename: analysis.placename, city: analysis.city, country: analysis.country });
-  const hit: GeocodeHit = located.hit;
-
-  // 4. Not a second view of a camera we already have.
-  const dup = existing.find(
-    (e) =>
-      distanceKm(e.latitude, e.longitude, hit.latitude, hit.longitude) <= DUPLICATE_KM &&
-      calculatePlaceMatch(e.placename, e.city, analysis.placename) >= 0.7
+  // 4. Not a second view of a camera we already have. A match against a
+  //    camera that is *down* is the opposite of a duplicate: it is the
+  //    stream that camera has been waiting for, so hand it over.
+  const near = existing.filter(
+    (e) => distanceKm(e.latitude, e.longitude, hit.latitude, hit.longitude) <= DUPLICATE_KM
   );
-  if (dup) return reject(`duplicate-of:${dup.camera_id}`, { analysis: base, confidence: analysis.confidence, placename: analysis.placename });
+  //    Proximity already vouches for the location, so compare names only
+  //    (calculatePlaceMatch without a city is 0.7 × name coverage).
+  const scored = near
+    .map((e) => ({ e, score: Math.max(
+      calculatePlaceMatch(e.placename, null, analysis.placename),
+      calculatePlaceMatch(e.placename, null, video.title)
+    ) }))
+    .sort((a, b) => b.score - a.score);
+  const live = scored.find(({ e, score }) => e.link_available && score >= 0.49); // ≥70% of the name
+  if (live) return reject(`duplicate-of:${live.e.camera_id}`, { analysis: base, confidence: analysis.confidence, placename: analysis.placename });
+  const down = scored.find(({ e, score }) => !e.link_available && score >= 0.35); // ≥50% of the name
+  if (down) {
+    return {
+      status: "rejected", decidedBy: "auto", rejectReason: `repairs:${down.e.camera_id}`,
+      placename: analysis.placename, city: analysis.city ?? hit.name, country: analysis.country || hit.country,
+      latitude: hit.latitude, longitude: hit.longitude, timezone: hit.timezone, tag: null, metadata: null,
+      confidence: analysis.confidence, analysis: { ...base, geocode: hit, repairs: down.e.camera_id },
+    };
+  }
 
   const metadata: CameraMetadata = {
     primaryType: analysis.primaryType,
@@ -249,8 +298,7 @@ async function analyseCandidate(
     weatherTolerance: analysis.weatherTolerance,
   };
 
-  const bar = video.source === "channel" ? AUTO_APPROVE_CHANNEL : AUTO_APPROVE_SEARCH;
-  const auto = Boolean(llm) && analysis.confidence >= bar;
+  const auto = analysis.confidence >= bar;
 
   return {
     status: auto ? "approved" : "pending",
@@ -265,7 +313,7 @@ async function analyseCandidate(
     tag: analysis.tags.join(","),
     metadata,
     confidence: analysis.confidence,
-    analysis: { ...base, geocode: { via: located.via, ...hit } },
+    analysis: { ...base, geocode: hit },
   };
 }
 
@@ -283,6 +331,26 @@ async function knownVideoIds(): Promise<Set<string>> {
   return ids;
 }
 
+/** Majority country of each host channel's existing cameras. */
+async function channelCountries(): Promise<Map<string, string>> {
+  const rows = await query<{ host_link: string; country: string; n: number }>(
+    `SELECT host_link, country, COUNT(*) AS n FROM camera_ytb
+     WHERE host_link IS NOT NULL AND country IS NOT NULL AND country != ''
+     GROUP BY host_link, country`
+  );
+  const best = new Map<string, { country: string; n: number }>();
+  for (const r of rows) {
+    const key = channelKey(r.host_link);
+    const cur = best.get(key);
+    if (!cur || r.n > cur.n) best.set(key, { country: r.country, n: r.n });
+  }
+  return new Map([...best].map(([k, v]) => [k, v.country]));
+}
+
+function channelKey(url: string): string {
+  return url.toLowerCase().replace(/\/(streams|live|videos|featured)\/?$/, "").replace(/\/+$/, "");
+}
+
 async function trustedChannels(): Promise<string[]> {
   const rows = await query<{ host_link: string }>(
     `SELECT DISTINCT host_link FROM camera_ytb
@@ -298,11 +366,11 @@ function searchSlice(now = new Date()): string[] {
 }
 
 async function existingCameraPlaces(): Promise<ExistingPlace[]> {
-  const rows = await query<ExistingPlace>(
-    `SELECT camera_id, placename, city, latitude, longitude FROM camera_ytb
-     WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND retired_at IS NULL`
+  const rows = await query<Omit<ExistingPlace, "link_available"> & { link_available: number | null }>(
+    `SELECT camera_id, placename, city, latitude, longitude, link_available FROM camera_ytb
+     WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
   );
-  return rows;
+  return rows.map((r) => ({ ...r, link_available: r.link_available !== 0 }));
 }
 
 async function insertCandidate(
@@ -361,6 +429,25 @@ export async function approveCandidate(id: number, by: "auto" | "admin"): Promis
   );
   console.log(`[discovery] approved candidate ${id} as camera ${cameraId} (${c.placename})`);
   return cameraId;
+}
+
+/** Point a down camera at a discovered stream (and un-retire it). */
+async function adoptStreamForCamera(cameraId: string, video: LiveVideoInfo): Promise<boolean> {
+  const cam = await queryOne<{ link_available: number | null }>(`SELECT link_available FROM camera_ytb WHERE camera_id = ?`, cameraId);
+  if (!cam || cam.link_available === 1) return false;
+  await execute(
+    `UPDATE camera_ytb
+     SET link = ?, ytb_title = ?, host_link = COALESCE(?, host_link), link_available = 1,
+         consecutive_failures = 0, unavailable_since = NULL, retired_at = NULL, last_check = ?
+     WHERE camera_id = ?`,
+    `https://www.youtube.com/watch?v=${video.videoId}`,
+    video.title,
+    video.channelUrl ? `${video.channelUrl.replace(/\/streams$/, "")}/streams` : null,
+    nowIso(),
+    cameraId
+  );
+  console.log(`[discovery] repaired camera ${cameraId} with ${video.videoId}`);
+  return true;
 }
 
 export async function rejectCandidate(id: number, reason = "admin"): Promise<boolean> {

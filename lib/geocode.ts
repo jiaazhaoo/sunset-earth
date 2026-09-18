@@ -11,6 +11,10 @@ export type GeocodeHit = {
   country: string;
   countryCode: string;
   admin1: string | null;
+  admin2: string | null;
+  admin3: string | null;
+  /** GeoNames feature code: PPL (place), MT, LK, BCH, HBR, VLC, AIRP, RSTN… */
+  featureCode: string | null;
   timezone: string;
   population: number;
 };
@@ -22,6 +26,8 @@ type ApiResult = {
   country?: string;
   country_code?: string;
   admin1?: string;
+  admin2?: string;
+  admin3?: string;
   timezone?: string;
   population?: number;
   feature_code?: string;
@@ -44,6 +50,9 @@ export async function geocode(name: string, count = 8): Promise<GeocodeHit[]> {
       country: r.country ?? "",
       countryCode: (r.country_code ?? "").toUpperCase(),
       admin1: r.admin1 ?? null,
+      admin2: r.admin2 ?? null,
+      admin3: r.admin3 ?? null,
+      featureCode: r.feature_code ?? null,
       timezone: r.timezone ?? "UTC",
       population: r.population ?? 0,
     }));
