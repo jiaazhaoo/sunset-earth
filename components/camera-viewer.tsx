@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { CameraRecord } from "@/lib/cameras";
 import type { CameraMeta } from "@/lib/rankings";
 import { useNow } from "@/components/use-now";
-import { WorldMap, type MapPoint } from "@/components/world-map";
+import { MiniMap } from "@/components/mini-map";
 import {
   describeSunPhase,
   describeWeather,
@@ -302,10 +302,6 @@ export function CameraViewer({ initialCamera }: Props) {
 
   const videoId = extractYoutubeId(camera?.sourceUrl ?? camera?.embedUrl);
 
-  const here: MapPoint | null =
-    camera && camera.lat !== null && camera.lng !== null
-      ? { id: camera.id, lat: camera.lat, lng: camera.lng, name: camera.name }
-      : null;
 
   return (
     <>
@@ -340,7 +336,12 @@ export function CameraViewer({ initialCamera }: Props) {
         {/* Caption: a small globe, the words, the button */}
         <div className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex min-w-0 items-center gap-5">
-            <WorldMap current={here} className="h-[5.5rem] w-44 shrink-0" />
+            <MiniMap
+              lat={camera?.lat ?? null}
+              lng={camera?.lng ?? null}
+              name={camera?.name ?? ""}
+              className="h-24 w-40 sm:h-28 sm:w-48"
+            />
             <div className="min-w-0">
               <h1 className="font-serif text-4xl leading-none tracking-tight text-white sm:truncate sm:text-5xl">
                 {camera?.name ?? "No active stream"}
