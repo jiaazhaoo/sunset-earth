@@ -302,41 +302,6 @@ export function CameraViewer({ initialCamera }: Props) {
 
   const videoId = extractYoutubeId(camera?.sourceUrl ?? camera?.embedUrl);
 
-  // Every live camera as a faint dot on the map; the one playing glows.
-  const [points, setPoints] = useState<MapPoint[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/cameras", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { cameras: [] }))
-      .then((data: { cameras?: CameraRecord[] }) => {
-        if (cancelled) return;
-        setPoints(
-          (data.cameras ?? [])
-            .filter((c) => c.linkAvailable !== false && c.lat !== null && c.lng !== null)
-            .map((c) => ({ id: c.id, lat: c.lat as number, lng: c.lng as number, name: c.name }))
-        );
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const pickById = useCallback(async (id: string) => {
-    if (id === camera?.id) return;
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/best-camera?cameraId=${encodeURIComponent(id)}`, { cache: "no-store" });
-      if (!response.ok) return;
-      const payload = (await response.json()) as BestCameraResponse;
-      setSeen((prev) => (prev.includes(payload.camera.id) ? prev : [...prev, payload.camera.id]));
-      setCamera(payload.camera);
-      setCameraMeta(payload.meta ?? null);
-    } finally {
-      setLoading(false);
-    }
-  }, [camera?.id]);
-
   const here: MapPoint | null =
     camera && camera.lat !== null && camera.lng !== null
       ? { id: camera.id, lat: camera.lat, lng: camera.lng, name: camera.name }
@@ -375,13 +340,7 @@ export function CameraViewer({ initialCamera }: Props) {
         {/* Caption: a small globe, the words, the button */}
         <div className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex min-w-0 items-center gap-5">
-            <WorldMap
-              current={here}
-              others={points.filter((p) => p.id !== camera?.id)}
-              now={now}
-              onPick={pickById}
-              className="h-24 w-24 shrink-0"
-            />
+            <WorldMap current={here} className="h-[5.5rem] w-44 shrink-0" />
             <div className="min-w-0">
               <h1 className="font-serif text-4xl leading-none tracking-tight text-white sm:truncate sm:text-5xl">
                 {camera?.name ?? "No active stream"}
