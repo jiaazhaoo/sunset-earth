@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 /*
- * Sunset Earth is a dark, cinematic surface for video: one theme, warm
- * neutrals, a single orange→rose accent. Colors live here as tokens so the
- * components only ever say `bg-surface`, `text-muted`, `border-line`.
+ * One dark theme, flat, no decoration: the video is the only thing that gets
+ * a rounded corner or a colour. Tokens here so components only ever say
+ * `text-muted`, `border-line`, `bg-surface`.
  */
 :root {
   --background: #09090b;
@@ -40,9 +40,7 @@ html {
 
 body {
   min-height: 100dvh;
-  background:
-    radial-gradient(60rem 30rem at 50% -10rem, rgba(251, 146, 60, 0.12), transparent 70%),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;

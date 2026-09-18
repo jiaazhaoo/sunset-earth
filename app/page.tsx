@@ -1,6 +1,5 @@
 import { CameraViewer } from "@/components/camera-viewer";
 import { SiteHeader } from "@/components/site-header";
-import { SunOverview } from "@/components/sun-overview";
 import {
   countAvailableCameras,
   getCameraById,
@@ -65,17 +64,11 @@ export default async function Home({ searchParams }: HomeProps) {
   return (
     <>
       <SiteHeader liveCount={liveCount} />
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-4 pb-24 pt-5 sm:px-6 sm:pt-10">
+      <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-5 sm:px-6">
         <CameraViewer initialCamera={initialCamera} />
-        <SunOverview currentCameraId={initialCamera?.id ?? null} />
       </main>
-      <footer className="border-t border-line">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-8 text-xs text-faint sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <p>
-            Cameras are ranked every few minutes by weather and distance to golden hour.
-          </p>
-          <p>Streams via YouTube · Forecasts via Open-Meteo</p>
-        </div>
+      <footer className="mx-auto w-full max-w-6xl px-4 pb-8 text-xs text-faint sm:px-6">
+        Ranked every few minutes by weather and distance to golden hour · Streams via YouTube · Forecasts via Open-Meteo
       </footer>
     </>
   );

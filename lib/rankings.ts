@@ -12,6 +12,8 @@ export type CameraRankingRow = {
   next_event_time: string | null;
   following_event_type: string | null;
   following_event_time: string | null;
+  sunrise: string | null;
+  sunset: string | null;
   computed_at: string;
   available: boolean;
 };
@@ -23,7 +25,7 @@ type RankingDbRow = Omit<CameraRankingRow, "is_clear" | "available"> & {
 };
 
 const RANKING_FIELDS =
-  "camera_id,score,label,distance_minutes,is_clear,weather_class,timezone,next_event_type,next_event_time,following_event_type,following_event_time,computed_at,available";
+  "camera_id,score,label,distance_minutes,is_clear,weather_class,timezone,next_event_type,next_event_time,following_event_type,following_event_time,sunrise,sunset,computed_at,available";
 
 function mapRankingRow(row: RankingDbRow): CameraRankingRow {
   return {
@@ -81,4 +83,56 @@ export async function fetchRankingByCameraId(cameraId: string) {
   );
 
   return row ? mapRankingRow(row) : null;
+}
+
+export type SolarEventType = "sunrise" | "sunset";
+
+export type CameraMeta = {
+  cameraId: string;
+  score: number;
+  label?: string;
+  isClear: boolean;
+  distanceMinutes?: number;
+  weatherClass?: string;
+  timezone: string | null;
+  sunrise?: string;
+  sunset?: string;
+  nextEvent: { type: SolarEventType; timeISO: string } | null;
+  followingEvent: { type: SolarEventType; timeISO: string } | null;
+};
+
+/** The ranking row as the client sees it, with the two closest sun events. */
+export function buildCameraMeta(ranking: CameraRankingRow, now = Date.now()): CameraMeta {
+  const events = closestSolarEvents(ranking, now);
+  return {
+    cameraId: String(ranking.camera_id),
+    score: ranking.score ?? 0,
+    label: ranking.label ?? undefined,
+    isClear: Boolean(ranking.is_clear),
+    distanceMinutes: ranking.distance_minutes ?? undefined,
+    weatherClass: ranking.weather_class ?? undefined,
+    timezone: ranking.timezone ?? null,
+    sunrise: ranking.sunrise ?? undefined,
+    sunset: ranking.sunset ?? undefined,
+    nextEvent: events[0] ?? null,
+    followingEvent: events[1] ?? null,
+  };
+}
+
+function closestSolarEvents(ranking: CameraRankingRow, now: number) {
+  const all: Array<{ type: SolarEventType; timeISO: string }> = [];
+  if (ranking.sunrise) all.push({ type: "sunrise", timeISO: ranking.sunrise });
+  if (ranking.sunset) all.push({ type: "sunset", timeISO: ranking.sunset });
+  if (ranking.next_event_type && ranking.next_event_time) {
+    all.push({ type: ranking.next_event_type as SolarEventType, timeISO: ranking.next_event_time });
+  }
+  if (ranking.following_event_type && ranking.following_event_time) {
+    all.push({ type: ranking.following_event_type as SolarEventType, timeISO: ranking.following_event_time });
+  }
+  return all
+    .map((e) => ({ ...e, ts: Date.parse(e.timeISO) }))
+    .filter((e) => !Number.isNaN(e.ts))
+    .sort((a, b) => Math.abs(a.ts - now) - Math.abs(b.ts - now))
+    .slice(0, 2)
+    .map((e) => ({ type: e.type, timeISO: new Date(e.ts).toISOString() }));
 }

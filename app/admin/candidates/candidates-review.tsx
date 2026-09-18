@@ -60,8 +60,8 @@ export function CandidatesReview() {
           <button
             key={s}
             onClick={() => switchStatus(s)}
-            className={`rounded-full px-3 py-1 ring-1 transition ${
-              status === s ? "bg-accent text-black ring-accent" : "bg-surface text-muted ring-line hover:text-foreground"
+            className={` px-3 py-1 border transition ${
+              status === s ? "border-foreground bg-foreground text-background" : "border-line bg-surface text-muted hover:text-foreground"
             }`}
           >
             {s}
@@ -74,12 +74,12 @@ export function CandidatesReview() {
 
       <ul className="flex flex-col gap-3">
         {rows.map((c) => (
-          <li key={c.id} className="grid gap-3 rounded-2xl bg-surface p-4 ring-1 ring-line sm:grid-cols-[12rem_1fr_auto]">
+          <li key={c.id} className="grid gap-3 bg-surface p-4 border border-line sm:grid-cols-[12rem_1fr_auto]">
             <a
               href={`https://www.youtube.com/watch?v=${c.video_id}`}
               target="_blank"
               rel="noreferrer noopener"
-              className="block aspect-video overflow-hidden rounded-lg bg-black"
+              className="block aspect-video overflow-hidden bg-black"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -113,7 +113,7 @@ export function CandidatesReview() {
                 <button
                   disabled={busyId === c.id || c.latitude === null}
                   onClick={() => act(c.id, "approve")}
-                  className="rounded-lg bg-emerald-500/90 px-3 py-1.5 text-xs font-semibold text-black disabled:opacity-40"
+                  className=" bg-emerald-500/90 px-3 py-1.5 text-xs font-semibold text-black disabled:opacity-40"
                 >
                   Approve
                 </button>
@@ -121,7 +121,7 @@ export function CandidatesReview() {
                   <button
                     disabled={busyId === c.id}
                     onClick={() => act(c.id, "reject")}
-                    className="rounded-lg bg-surface-raised px-3 py-1.5 text-xs font-semibold text-muted ring-1 ring-line disabled:opacity-40"
+                    className=" bg-surface-raised px-3 py-1.5 text-xs font-semibold text-muted border border-line disabled:opacity-40"
                   >
                     Reject
                   </button>
