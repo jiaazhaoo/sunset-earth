@@ -117,3 +117,27 @@ body {
   padding-top: 0;
   min-height: 100dvh;
 }
+
+/* Explore map: one dot per camera, coloured by its light (--dot). */
+.explore-dot {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  padding: 0;
+  background: var(--dot, #e5e7eb);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.explore-dot:hover {
+  transform: scale(1.6);
+}
+.explore-dot[data-tone="golden"] {
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6), 0 0 12px 2px rgba(252, 211, 77, 0.6);
+}
+.explore-dot[data-tone="blue"] {
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6), 0 0 10px 2px rgba(167, 139, 250, 0.5);
+}
+.maplibregl-ctrl-group { border-radius: 0 !important; }
+.maplibregl-ctrl-group button { border-radius: 0 !important; }
+.maplibregl-ctrl-attrib { border-radius: 0 !important; }

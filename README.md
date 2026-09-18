@@ -38,6 +38,7 @@ Cron Triggers that `worker.ts` dispatches to API routes:
 | `0 */3 * * *` | `/api/weather-cache` | Refresh Open-Meteo forecasts |
 | `0 * * * *` | `/api/replace-link` | Probe cameras on air; repair the ones that are down |
 | `0 3 * * 1` | `/api/discover` | Find new cameras; retire ones down for 30 days |
+| `*/10 * * * *` | `/api/tick` | Sunset reminders (Web Push) and gallery frames |
 
 The cron routes iterate every camera and need the paid Workers plan
 (`limits.cpu_ms` in `wrangler.jsonc`); the site itself would run on free.
@@ -64,6 +65,24 @@ Everything that touches `camera_ytb.link_available` goes through
 
 `npx tsx scripts/find-replacements.ts` dry-runs the repair logic against the
 live database from a workstation without writing anything.
+
+## What the site does for a viewer
+
+- **Home** (`/`): the best camera right now. The eyebrow line says what is
+  happening ("Sunset in 12 min", "Blue hour") and, when the camera on screen
+  is in plain daylight, where the light is instead. TV mode (`T`) moves to the
+  next golden hour every few minutes; `→` next, `F` fullscreen, `S` save.
+- **Explore** (`/explore`): every live camera on a dark map, coloured by its
+  light right now; saved cameras; golden hour now; tonight's sunsets in order.
+- **Gallery** (`/gallery`): a frame from each camera's best golden hour, kept
+  by `/api/tick` in R2 (`HIGHLIGHTS` bucket) — one per camera per day.
+- **Reminders**: the 🔔 subscribes this browser (Web Push, VAPID keys in
+  `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / secret `VAPID_PRIVATE_KEY`) to "Sunset in
+  15 min" for that camera; `/api/tick` sends them.
+- **Share**: a `?camera=` link carries the camera's name, description and
+  stream cover as its card.
+- **Analytics**: Cloudflare Web Analytics, once `NEXT_PUBLIC_CF_BEACON_TOKEN`
+  is set in `wrangler.jsonc` vars.
 
 ## How new cameras arrive
 
@@ -98,10 +117,12 @@ Manual run: `curl -H "Authorization: Bearer $CRON_SECRET" "https://sunset-earth.
 
 ```
 app/                Next.js app router
-  page.tsx          Homepage: best camera + the next best ten
+  page.tsx          Homepage: best camera, headline, TV mode
+  explore/          Map of every live camera + tonight's lineup
+  gallery/          Kept golden-hour frames
   api/              Cron routes, viewer endpoints, /api/admin/* (cookie or bearer), /api/dev/* (prod: 404)
   admin/candidates  Review queue for discovered streams
-components/         camera-viewer (info line, player, thumbnail strip), site-header, use-now
+components/         camera-viewer, mini-map, explore-map, site-header, use-now, use-favourites, use-push
 lib/
   db.ts             D1 access (env.DB)
   cameras.ts        camera_ytb rows → CameraRecord
@@ -117,6 +138,9 @@ lib/
   llm.ts            Optional Claude title analysis for unresolved titles
   geocode.ts        Open-Meteo geocoding
   sun-format.ts     Pure formatters for sun phases and clocks
+  sun-schedule.ts   Golden hour now / upcoming sunsets from the live list
+  push.ts           Web Push (VAPID) sending and subscription storage
+  wikipedia.ts      Place descriptions
   auth.ts           CRON_SECRET guard, dev-tools gate
 d1/                 schema.sql, migrations/, seed, CSV → SQL generator
 worker.ts           Cloudflare entry: OpenNext fetch + scheduled()

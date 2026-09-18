@@ -46,7 +46,8 @@
       "0 * * * *",
       "0 */3 * * *",
       "*/5 * * * *",
-      "0 3 * * 1"
+      "0 3 * * 1",
+      "*/10 * * * *"
     ]
   },
   // No vars are required. CRON_SECRET is a secret: `wrangler secret put CRON_SECRET`.
@@ -59,5 +60,11 @@
   // NEXT_PUBLIC_CF_BEACON_TOKEN: Cloudflare Web Analytics beacon token
   // (dashboard → Analytics & Logs → Web Analytics → Add a site → manual
   // setup, copy the token). Build-time, so it goes here, not in secrets.
-  "vars": {}
+  "vars": {
+    // Web Push (VAPID) public key; the private half is the VAPID_PRIVATE_KEY secret.
+    "NEXT_PUBLIC_VAPID_PUBLIC_KEY": "BA_av5u2yuoOMr9uVz2qeNFStWf2DA2Zm8yJwiCGrzWiFQO__YF7kntFNlSOm6IyQ6MTUS-GZDfHKzKqLG4PkTE"
+  },
+  "r2_buckets": [
+    { "binding": "HIGHLIGHTS", "bucket_name": "sunset-earth-highlights" }
+  ]
 }

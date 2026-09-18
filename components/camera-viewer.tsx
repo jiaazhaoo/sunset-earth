@@ -6,6 +6,7 @@ import type { CameraMeta } from "@/lib/rankings";
 import { useNow } from "@/components/use-now";
 import { MiniMap } from "@/components/mini-map";
 import { useFavourites } from "@/components/use-favourites";
+import { usePushReminder } from "@/components/use-push";
 import { goldenNow, headlineFor, upcoming, type ScheduledCamera } from "@/lib/sun-schedule";
 import {
   describeSunPhase,
@@ -393,6 +394,7 @@ export function CameraViewer({ initialCamera }: Props) {
 
   // --- Keyboard: → next · T tv mode · F fullscreen · S save ----------------
   const { toggle: toggleFavourite, has: isFavourite } = useFavourites();
+  const reminder = usePushReminder(camera?.id ?? null);
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else document.documentElement.requestFullscreen?.().catch(() => {});
@@ -519,6 +521,23 @@ export function CameraViewer({ initialCamera }: Props) {
                 >
                   {camera && isFavourite(camera.id) ? "♥ Saved" : "♡ Save"}
                 </button>
+                {reminder.state !== "unsupported" ? (
+                  <button
+                    onClick={reminder.toggle}
+                    disabled={reminder.state === "busy" || reminder.state === "denied"}
+                    aria-pressed={reminder.state === "on"}
+                    title={
+                      reminder.state === "denied"
+                        ? "Notifications are blocked for this site"
+                        : "Remind me 15 minutes before this camera's sunset"
+                    }
+                    className={`border px-2 py-1.5 transition disabled:opacity-40 ${
+                      reminder.state === "on" ? "border-amber-300 text-amber-300" : "border-white/20 text-white/70 hover:border-white/50"
+                    }`}
+                  >
+                    {reminder.state === "on" ? "🔔" : "🔕"}
+                  </button>
+                ) : null}
                 <button
                   onClick={toggleFullscreen}
                   title="Fullscreen (F)"
