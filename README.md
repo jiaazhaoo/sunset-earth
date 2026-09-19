@@ -50,7 +50,8 @@ Everything that touches `camera_ytb.link_available` goes through
 
 - **Probe** ([`lib/availability.ts`](lib/availability.ts)): reads YouTube's
   own `playabilityStatus` from the watch page, including `playableInEmbed`
-  (the IFrame player's error 150). Definitive verdicts demote immediately;
+  (the IFrame player's error 150), and the stream's format ladder
+  (`camera_ytb.max_height`). Definitive verdicts demote immediately;
   soft failures (timeouts, bot-check pages) need two strikes in a row.
 - **Repair** ([`lib/cameraRefresh.ts`](lib/cameraRefresh.ts)): for a camera
   that is down, look at its host channel's `/streams` tab, then fall back to a
@@ -65,6 +66,47 @@ Everything that touches `camera_ytb.link_available` goes through
 
 `npx tsx scripts/find-replacements.ts` dry-runs the repair logic against the
 live database from a workstation without writing anything.
+
+## How the ranking judges the picture
+
+Good light at the right time is not enough — plenty of cameras are dull at
+sunset. The conditions score from
+[`lib/client-ranking-v2.ts`](lib/client-ranking-v2.ts) (time of day × weather)
+is therefore multiplied by picture signals, all in
+[`lib/quality.ts`](lib/quality.ts); unknown always means ×1.0:
+
+- **Sky outlook** ([`lib/sky.ts`](lib/sky.ts)): Open-Meteo's low/mid/high
+  cloud layers become a 0..1 index for golden-hour colour — high cloud
+  catches light, low cloud is a lid, clear is fine but flat, haze and rain
+  mute it. Inside the sunset/sunrise/blue-hour tiers the weather weight
+  follows it, and the caption says so ("High cloud sky").
+- **The frame itself** ([`lib/visual.ts`](lib/visual.ts),
+  [`lib/visual-measure.ts`](lib/visual-measure.ts)): every 10 minutes
+  `/api/tick` fetches each camera's live thumbnail
+  (`i.ytimg.com/vi/<id>/hqdefault_live.jpg`), hashes it and, once the bytes
+  have been seen to change — so it is a real frame, not a card the channel
+  uploaded — scores exposure, contrast, colourfulness, open sky and warm
+  light with plain statistics, no model. Stored in `camera_visual`; ×0.6 for
+  a black frame, ×1.0 at 0.8, a small bonus above. A measurement older than
+  90 minutes is ignored.
+- **Resolution**: the probe reads the stream's format ladder from the watch
+  page; 720p ×0.97, 480p ×0.85, less ×0.7. YouTube often withholds the
+  ladder from data-centre IPs, so `npx tsx scripts/backfill-resolution.ts`
+  fills `max_height` from a workstation.
+- **Viewers** (`POST /api/events`,
+  [`components/use-view-feedback.ts`](components/use-view-feedback.ts)):
+  leaving within 5 s is a skip, staying 3 min with the tab in front is a
+  stay, ♡ is a save — counts per camera and phase (golden / day / night) in
+  `camera_feedback`, nothing per person. After five weighted events the
+  ratio moves the score ×0.85..×1.15. TV mode and stream failures never
+  count as skips.
+- **A person** (**`/admin/curate`**, sign in with `CRON_SECRET`): the
+  current frame of every camera with all of the above, and one to five
+  stars — ★ ×0.5, ★★ ×0.75, ★★★ neutral, ★★★★ ×1.08, ★★★★★ ×1.15
+  (`camera_ytb.curated_rating`).
+
+`npx tsx scripts/visual-calibrate.ts <dir of thumbnails>` ranks saved frames
+with the same statistics, for tuning.
 
 ## What the site does for a viewer
 
@@ -150,6 +192,8 @@ docs/               Design notes; archive/ holds pre-migration reports
 
 ## Data
 
-`camera_ytb` is the only irreplaceable table — the curated camera list. The
-others (`camera_rankings`, `camera_weather_cache`, `task_locks`) are rebuilt
-by the crons. See [`d1/README.md`](d1/README.md).
+`camera_ytb` is the only irreplaceable table — the curated camera list,
+including the curator's `curated_rating`. `camera_feedback` (viewer counts)
+is small but cannot be rebuilt either. The others (`camera_rankings`,
+`camera_weather_cache`, `camera_visual`, `task_locks`) are rebuilt by the
+crons. See [`d1/README.md`](d1/README.md).

@@ -7,10 +7,21 @@ There is no Supabase and no Postgres anywhere in the stack.
 
 | Table | Contents | Rebuildable? |
 | --- | --- | --- |
-| `camera_ytb` | Master camera list (links, coordinates, timezone, tags) | ❌ **The only irreplaceable data** |
+| `camera_ytb` | Master camera list (links, coordinates, timezone, tags, `curated_rating`, `max_height`) | ❌ **The only irreplaceable data** |
+| `camera_candidates` | Streams the weekly discovery found but did not adopt, awaiting `/admin/candidates` | ⚠️ decisions are lost, the streams are found again |
+| `camera_feedback` | Viewer skips / stays / saves per camera and phase (`/api/events`) | ⚠️ small, but not rebuildable |
 | `camera_rankings` | Scores written by `/api/compute-rankings` | ✅ cron rebuilds it |
 | `camera_weather_cache` | Latest Open-Meteo snapshot per camera | ✅ cron refills it |
+| `camera_visual` | Latest live-thumbnail measurement per camera (`/api/tick`) | ✅ cron rebuilds it in an hour |
 | `task_locks` | Short-lived cron locks | ✅ self-healing |
+
+`schema.sql` is the base; everything added since lives in
+[`migrations/`](migrations/), numbered. Remote D1 rejects `ALTER TABLE` inside
+`--file`, so apply each statement of a migration with `--command`:
+
+```bash
+npx wrangler d1 execute sunset-earth --remote --command "ALTER TABLE camera_ytb ADD COLUMN max_height INTEGER"
+```
 
 ## First-time setup
 

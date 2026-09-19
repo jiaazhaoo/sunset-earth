@@ -6,6 +6,7 @@ import { scoreCameraWeather } from "@/lib/client-ranking-v2";
 import { execute, fromBool, query } from "@/lib/db";
 import { parseDateInTimezone } from "@/lib/time";
 import { isTaskLocked, withTaskLock } from "@/lib/task-lock";
+import { applyQuality, phaseOf, type FeedbackCounts } from "@/lib/quality";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -74,9 +75,20 @@ async function loadVisualFactors(now: Date): Promise<Map<string, number>> {
   return out;
 }
 
+/** Viewer skips / stays / saves per camera and phase (lib/quality.ts). */
+async function loadFeedback(): Promise<Map<string, FeedbackCounts>> {
+  const rows = await query<{ camera_id: string; phase: string; skips: number; dwells: number; favs: number }>(
+    `SELECT camera_id, phase, skips, dwells, favs FROM camera_feedback`
+  );
+  return new Map(
+    rows.map((r) => [`${r.camera_id}:${r.phase}`, { skips: r.skips, dwells: r.dwells, favs: r.favs }])
+  );
+}
+
 async function executeComputeRankings() {
   const now = new Date();
   const visualFactors = await loadVisualFactors(now);
+  const feedback = await loadFeedback();
   let offset = 0;
   const summary = {
     processed: 0,
@@ -170,11 +182,17 @@ async function executeComputeRankings() {
           weather.timezone
         );
         // The picture itself: a dull frame in perfect conditions is still
-        // dull. Only cameras whose live thumbnail is a real, changing frame
-        // carry a visual score; the rest keep the conditions-only score.
+        // dull. The live thumbnail's look (only for thumbnails seen to
+        // change), the stream's resolution, what viewers did in this phase
+        // and the curator's stars each nudge the conditions score
+        // (lib/quality.ts).
         const visual = visualFactors.get(camera.id);
-        const score =
-          visual === undefined ? evaluation.score : Math.min(100, Math.round(evaluation.score * (0.6 + 0.5 * visual)));
+        const score = applyQuality(evaluation.score, {
+          visual,
+          maxHeight: camera.maxHeight,
+          feedback: feedback.get(`${camera.id}:${phaseOf(evaluation.label)}`),
+          rating: camera.curatedRating,
+        });
 
         await upsertRanking({
           cameraId: camera.id,

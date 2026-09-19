@@ -152,6 +152,31 @@ survive six months of neglect. Then open the site and confirm a camera plays.
   reports and one-off debug scripts archived, README rewritten for the
   Cloudflare stack.
 
+## Status update — 2026-09-19: ranking by the picture
+
+Migrations `d1/migrations/0004_sky_and_visual.sql` and
+`0005_quality_signals.sql` are applied to the remote database (statement by
+statement with `--command`; `--file` rejects ALTER). New: `camera_visual`,
+`camera_feedback`, `camera_rankings.sky_index/sky_title/visual_score`,
+`camera_ytb.max_height/curated_rating`. See README → "How the ranking judges
+the picture".
+
+Operational notes:
+
+- Thumbnails carry `Cache-Control: max-age=300`; two ticks less than five
+  minutes apart see identical bytes, so a manual `/api/tick` right after
+  another one reports `changed: 0`. The 10-minute cron is what flips
+  `camera_visual.live`; ~40 of ~128 cameras were live within the first hour,
+  the rest are channel cards (or slow) and keep the conditions-only score.
+- A cron tick runs in a different Cloudflare colo than a manual call, i.e.
+  against a different YouTube edge; a change seen that way is still real.
+- The Worker rarely receives `streamingData` (YouTube answers data-centre
+  IPs with LOGIN_REQUIRED), so `max_height` fills slowly on its own; the
+  hourly sweep only ever overwrites NULL with a value. Run
+  `npx tsx scripts/backfill-resolution.ts` from a workstation to fill it now
+  (126/129 read on 2026-09-19; 13 cameras are 720p).
+- `/admin/curate` is the human override; ratings live in `camera_ytb`.
+
 ## Things that are likely to bite
 
 - **`npm install` script blocking.** Recent npm versions block postinstall

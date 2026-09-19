@@ -17,6 +17,8 @@ export type AvailabilityReason =
 export type AvailabilityResult = {
   available: boolean;
   reason: AvailabilityReason;
+  /** Tallest video format the watch page offered, when it could be read. */
+  maxHeight?: number | null;
 };
 
 export type AvailabilityOptions = {
@@ -113,7 +115,7 @@ async function checkYoutubeAvailability(
       );
       if (oembedResponse.ok && playable === "OK") {
         // Both oembed and playability confirm availability
-        return { available: true, reason: "ok" };
+        return { available: true, reason: "ok", maxHeight: status?.maxHeight ?? null };
       }
     } catch (error) {
       // oembed check failed, but don't fail the entire availability check
@@ -122,7 +124,7 @@ async function checkYoutubeAvailability(
 
     // If playability status is explicitly OK, trust it even if oembed failed
     if (playable === "OK" || isSoftBlocked) {
-      return { available: true, reason: "ok" };
+      return { available: true, reason: "ok", maxHeight: status?.maxHeight ?? null };
     }
   }
 
@@ -186,8 +188,23 @@ async function fetchPlayabilityStatus(
     }
     const data = JSON.parse(match[1]) as {
       playabilityStatus?: { status?: string; playableInEmbed?: boolean };
+      streamingData?: {
+        adaptiveFormats?: Array<{ height?: number }>;
+        formats?: Array<{ height?: number }>;
+      };
     };
-    return data.playabilityStatus ?? null;
+    if (!data.playabilityStatus) {
+      return null;
+    }
+    // A live stream lists its quality ladder here; the tallest rung is the
+    // resolution a viewer can actually get (lib/quality.ts penalises < 1080p).
+    const heights = [
+      ...(data.streamingData?.adaptiveFormats ?? []),
+      ...(data.streamingData?.formats ?? []),
+    ]
+      .map((format) => format.height ?? 0)
+      .filter((height) => height > 0);
+    return { ...data.playabilityStatus, maxHeight: heights.length ? Math.max(...heights) : null };
   } catch (error) {
     console.warn("[availability] playability status parse failed", error);
     return null;
