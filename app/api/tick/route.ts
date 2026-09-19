@@ -4,6 +4,7 @@ import type { R2Bucket } from "@cloudflare/workers-types";
 import { requireCronSecret } from "@/lib/auth";
 import { execute, nowIso, query } from "@/lib/db";
 import { sendPush, type SubscriptionRow } from "@/lib/push";
+import { measureThumbnails } from "@/lib/visual-measure";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 const REMIND_MIN = 15;
 const REMIND_WINDOW_MIN = 10; // the cron runs every 10 min, so [15, 25) catches each sunset once
 /** A camera's golden hour is worth keeping when it scores at least this. */
-const HIGHLIGHT_MIN_SCORE = 88;
+const HIGHLIGHT_MIN_SCORE = 85;
 
 type LiveRow = {
   camera_id: string;
@@ -25,9 +26,11 @@ type LiveRow = {
 };
 
 /**
- * Every ten minutes, two small jobs on the current rankings:
+ * Every ten minutes, three small jobs on the current rankings:
  *   1. sunset reminders to browsers that asked for a camera;
- *   2. keep a frame of each camera's best golden hour for the gallery.
+ *   2. keep a frame of each camera's best golden hour for the gallery;
+ *   3. look at every camera's live thumbnail and score how it looks
+ *      (lib/visual.ts), which compute-rankings folds into the score.
  */
 export async function GET(request: NextRequest) {
   const denied = requireCronSecret(request);
@@ -110,6 +113,11 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // --- 3. how does each camera look right now? ----------------------------
+  const visual = await measureThumbnails(
+    live.map((c) => ({ cameraId: c.camera_id, videoId: c.link?.match(/[?&]v=([\w-]{11})/)?.[1] ?? null }))
+  );
+
   void byId;
-  return NextResponse.json({ dueSoon: dueSoon.map((c) => c.camera_id), reminders, highlights });
+  return NextResponse.json({ dueSoon: dueSoon.map((c) => c.camera_id), reminders, highlights, visual });
 }

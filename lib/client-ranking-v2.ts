@@ -13,6 +13,7 @@
 import type { CameraMetadata, CameraTier } from './camera-metadata-types';
 import { getDefaultMetadata } from './camera-metadata-types';
 import { parseDateInTimezone } from './time';
+import { sunsetSkyIndex, type SkyOutlook } from './sky';
 import type { WeatherClassDetailed } from './weather-classification';
 import { classifyWeatherDetailed, getWeatherWeight } from './weather-classification';
 
@@ -32,6 +33,9 @@ export type OpenMeteoResponse = {
     time: string[];
     weathercode: number[];
     cloudcover: number[];
+    cloudcover_low?: number[];
+    cloudcover_mid?: number[];
+    cloudcover_high?: number[];
     relativehumidity_2m: number[];
     visibility: number[];
     precipitation: number[];
@@ -52,6 +56,8 @@ export type SolarEvent = {
 export type CameraEvaluation = {
   score: number;
   label?: string;
+  /** Golden-hour sky outlook from the cloud layers (lib/sky.ts). */
+  sky?: SkyOutlook;
   distanceMinutes?: number;
   isClear: boolean;
   isDaytime?: boolean | null;
@@ -92,6 +98,15 @@ export function scoreCameraWeather(
   const visibility = getHourlyValue(weather.hourly?.visibility, hourIndex);
   const precipitation = getHourlyValue(weather.hourly?.precipitation, hourIndex);
   const snowfall = getHourlyValue(weather.hourly?.snowfall, hourIndex);
+  const sky = sunsetSkyIndex({
+    cloudLow: getHourlyValue(weather.hourly?.cloudcover_low, hourIndex),
+    cloudMid: getHourlyValue(weather.hourly?.cloudcover_mid, hourIndex),
+    cloudHigh: getHourlyValue(weather.hourly?.cloudcover_high, hourIndex),
+    cloudTotal: cloudcover,
+    humidity,
+    visibility,
+    precipitation,
+  });
 
   // 天气细分
   const weatherClass = classifyWeatherDetailed(weatherCode, precipitation, snowfall);
@@ -132,6 +147,7 @@ export function scoreCameraWeather(
     metadata,
     timezone: options.timezone ?? weather.timezone,
     now,
+    sky,
   });
 
   const upcomingEvents = findUpcomingSolarEvents(weather, now, 2, timezone);
@@ -141,6 +157,7 @@ export function scoreCameraWeather(
   return {
     score,
     label: timeTier.label,
+    sky,
     distanceMinutes: timeTier.distanceMinutes,
     isClear,
     isDaytime,
@@ -478,6 +495,7 @@ type ScoreContext = {
   metadata: CameraMetadata;
   timezone: string;
   now: Date;
+  sky: SkyOutlook;
 };
 
 /**
@@ -485,7 +503,7 @@ type ScoreContext = {
  * 公式：最终分数 = 时间基础分 × 天气适配度 × 质量分数 × 特殊惩罚因子
  */
 function calculateEnhancedScore(context: ScoreContext): number {
-  const { timeTier, weatherClass, qualityScore, isClear, isDaytime, metadata, timezone, now } = context;
+  const { timeTier, weatherClass, qualityScore, isDaytime, metadata, timezone, now, sky } = context;
 
   // 时间基础分（0-100）
   const timeScores: Record<number, number> = {
@@ -502,15 +520,11 @@ function calculateEnhancedScore(context: ScoreContext): number {
   // 天气适配度（0-1）
   let weatherWeight = getWeatherWeight(weatherClass, metadata.weatherTolerance);
 
-  // 动态调整天气权重
-  if (timeTier.label === "blue-hour-sunset" || timeTier.label === "blue-hour-sunrise") {
-    // 蓝调时刻：天气影响极小
-    weatherWeight = isClear ? 1 : 0.98;
-  } else if (timeTier.label === "sunset-primary" || timeTier.label === "sunrise-primary") {
-    // 黄金时刻：partly-cloudy影响小
-    if (weatherClass === "partly-cloudy") {
-      weatherWeight = 0.9;
-    }
+  // 日出日落窗口内，天气权重不再是"晴 = 满分"，而是看云层结构：
+  // 中高云接光加分、低云盖顶扣分、全晴平淡但可看（lib/sky.ts）。
+  // 极端天气（雨雪、机位不容忍）仍由 getWeatherWeight 兜底。
+  if (timeTier.tier <= 3) {
+    weatherWeight = Math.min(weatherWeight, 0.45 + 0.55 * sky.index);
   }
 
   // 质量分数调整（30%-100%）

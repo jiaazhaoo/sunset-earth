@@ -24,6 +24,9 @@ export type OpenMeteoResponse = {
     time: string[];
     weathercode: number[];
     cloudcover: number[];
+    cloudcover_low?: number[];
+    cloudcover_mid?: number[];
+    cloudcover_high?: number[];
     relativehumidity_2m: number[];
     visibility: number[];
     precipitation: number[];
@@ -217,7 +220,7 @@ async function refreshWeatherSnapshot(
     latitude: String(lat),
     longitude: String(lng),
     hourly:
-      "weathercode,cloudcover,relativehumidity_2m,visibility,precipitation,snowfall",
+      "weathercode,cloudcover,cloudcover_low,cloudcover_mid,cloudcover_high,relativehumidity_2m,visibility,precipitation,snowfall",
     daily: "sunrise,sunset",
     timezone: "auto",
     forecast_days: "2",

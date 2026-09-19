@@ -597,7 +597,7 @@ function Conditions({
         <span aria-hidden className="text-white/25">·</span>
         <span className={accent}>{phaseText}</span>
         <span aria-hidden className="text-white/25">·</span>
-        <span>{sky.title}</span>
+        <span title={meta?.skyIndex !== undefined ? `Sunset sky outlook ${Math.round(meta.skyIndex * 100)}%` : undefined}>{meta?.skyTitle ? `${meta.skyTitle} sky` : sky.title}</span>
       </p>
       {progress !== null ? (
         <div className="relative h-px w-56 max-w-full bg-gradient-to-r from-violet-500/70 via-amber-300 to-violet-500/70" aria-hidden>

@@ -3,7 +3,7 @@ import { requireCronSecret } from "@/lib/auth";
 import { listCameras } from "@/lib/cameras";
 import { getCachedWeatherSnapshot } from "@/lib/weather";
 import { scoreCameraWeather } from "@/lib/client-ranking-v2";
-import { execute, fromBool } from "@/lib/db";
+import { execute, fromBool, query } from "@/lib/db";
 import { parseDateInTimezone } from "@/lib/time";
 import { isTaskLocked, withTaskLock } from "@/lib/task-lock";
 
@@ -58,8 +58,25 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/** Trust a thumbnail's look only if it has been seen changing recently. */
+const VISUAL_FRESH_MS = 90 * 60_000;
+
+async function loadVisualFactors(now: Date): Promise<Map<string, number>> {
+  const rows = await query<{ camera_id: string; score: number | null; live: number; changed_at: string | null }>(
+    `SELECT camera_id, score, live, changed_at FROM camera_visual WHERE live = 1 AND score IS NOT NULL`
+  );
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    const changed = r.changed_at ? Date.parse(r.changed_at) : NaN;
+    if (Number.isNaN(changed) || now.getTime() - changed > VISUAL_FRESH_MS) continue;
+    out.set(String(r.camera_id), r.score ?? 0);
+  }
+  return out;
+}
+
 async function executeComputeRankings() {
   const now = new Date();
+  const visualFactors = await loadVisualFactors(now);
   let offset = 0;
   const summary = {
     processed: 0,
@@ -152,10 +169,20 @@ async function executeComputeRankings() {
           weather.daily?.sunset?.[0],
           weather.timezone
         );
+        // The picture itself: a dull frame in perfect conditions is still
+        // dull. Only cameras whose live thumbnail is a real, changing frame
+        // carry a visual score; the rest keep the conditions-only score.
+        const visual = visualFactors.get(camera.id);
+        const score =
+          visual === undefined ? evaluation.score : Math.min(100, Math.round(evaluation.score * (0.6 + 0.5 * visual)));
+
         await upsertRanking({
           cameraId: camera.id,
-          score: evaluation.score,
+          score,
           label: evaluation.label,
+          skyIndex: evaluation.sky?.index,
+          skyTitle: evaluation.sky?.title,
+          visualScore: visual,
           distanceMinutes: evaluation.distanceMinutes,
           isClear: evaluation.isClear,
           weatherClass: evaluation.weatherClass,
@@ -174,7 +201,7 @@ async function executeComputeRankings() {
         summary.details.push({
           id: camera.id,
           status: "updated",
-          score: evaluation.score,
+          score,
         });
       } catch (error) {
         summary.errors++;
@@ -211,6 +238,9 @@ type RankingData = {
   followingEventTime?: Date;
   available: boolean;
   computedAt: Date;
+  skyIndex?: number;
+  skyTitle?: string;
+  visualScore?: number;
 };
 
 async function upsertRanking(data: RankingData) {
@@ -218,11 +248,15 @@ async function upsertRanking(data: RankingData) {
     `INSERT INTO camera_rankings (
        camera_id, score, label, distance_minutes, is_clear, weather_class,
        timezone, sunrise, sunset, next_event_type, next_event_time,
-       following_event_type, following_event_time, available, computed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       following_event_type, following_event_time, available, computed_at,
+       sky_index, sky_title, visual_score
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(camera_id) DO UPDATE SET
        score = excluded.score,
        label = excluded.label,
+       sky_index = excluded.sky_index,
+       sky_title = excluded.sky_title,
+       visual_score = excluded.visual_score,
        distance_minutes = excluded.distance_minutes,
        is_clear = excluded.is_clear,
        weather_class = excluded.weather_class,
@@ -249,6 +283,9 @@ async function upsertRanking(data: RankingData) {
     data.followingEventType ?? null,
     data.followingEventTime?.toISOString() ?? null,
     fromBool(data.available),
-    data.computedAt.toISOString()
+    data.computedAt.toISOString(),
+    data.skyIndex ?? null,
+    data.skyTitle ?? null,
+    data.visualScore ?? null
   );
 }

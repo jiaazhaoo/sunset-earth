@@ -14,6 +14,9 @@ export type CameraRankingRow = {
   following_event_time: string | null;
   sunrise: string | null;
   sunset: string | null;
+  sky_index?: number | null;
+  sky_title?: string | null;
+  visual_score?: number | null;
   computed_at: string;
   available: boolean;
 };
@@ -25,7 +28,7 @@ type RankingDbRow = Omit<CameraRankingRow, "is_clear" | "available"> & {
 };
 
 const RANKING_FIELDS =
-  "camera_id,score,label,distance_minutes,is_clear,weather_class,timezone,next_event_type,next_event_time,following_event_type,following_event_time,sunrise,sunset,computed_at,available";
+  "camera_id,score,label,distance_minutes,is_clear,weather_class,timezone,next_event_type,next_event_time,following_event_type,following_event_time,sunrise,sunset,sky_index,sky_title,visual_score,computed_at,available";
 
 function mapRankingRow(row: RankingDbRow): CameraRankingRow {
   return {
@@ -97,6 +100,11 @@ export type CameraMeta = {
   timezone: string | null;
   sunrise?: string;
   sunset?: string;
+  /** Golden-hour sky outlook, 0..1, and its short name ("High cloud"). */
+  skyIndex?: number;
+  skyTitle?: string;
+  /** How the live frame looks, 0..1; undefined when the thumbnail is a static card. */
+  visualScore?: number;
   nextEvent: { type: SolarEventType; timeISO: string } | null;
   followingEvent: { type: SolarEventType; timeISO: string } | null;
 };
@@ -114,6 +122,9 @@ export function buildCameraMeta(ranking: CameraRankingRow, now = Date.now()): Ca
     timezone: ranking.timezone ?? null,
     sunrise: ranking.sunrise ?? undefined,
     sunset: ranking.sunset ?? undefined,
+    skyIndex: ranking.sky_index ?? undefined,
+    skyTitle: ranking.sky_title ?? undefined,
+    visualScore: ranking.visual_score ?? undefined,
     nextEvent: events[0] ?? null,
     followingEvent: events[1] ?? null,
   };
