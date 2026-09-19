@@ -7,6 +7,7 @@ import { useNow } from "@/components/use-now";
 import { MiniMap } from "@/components/mini-map";
 import { useFavourites } from "@/components/use-favourites";
 import { usePushReminder } from "@/components/use-push";
+import { useViewFeedback } from "@/components/use-view-feedback";
 import { goldenNow, headlineFor, upcoming, type ScheduledCamera } from "@/lib/sun-schedule";
 import {
   describeSunPhase,
@@ -395,6 +396,21 @@ export function CameraViewer({ initialCamera }: Props) {
   // --- Keyboard: → next · T tv mode · F fullscreen · S save ----------------
   const { toggle: toggleFavourite, has: isFavourite } = useFavourites();
   const reminder = usePushReminder(camera?.id ?? null);
+  // Anonymous counts of skips, stays and saves, so the ranking learns which
+  // cameras people actually watch (lib/quality.ts). Only switches the viewer
+  // asks for go through nextByHand; TV mode and failures are not opinions.
+  const feedback = useViewFeedback(camera?.id ?? null);
+  const saveCamera = useCallback(
+    (id: string) => {
+      feedback.saved(id, !isFavourite(id));
+      toggleFavourite(id);
+    },
+    [feedback, isFavourite, toggleFavourite]
+  );
+  const nextByHand = useCallback(() => {
+    feedback.leaving();
+    return handleSwitch();
+  }, [feedback, handleSwitch]);
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else document.documentElement.requestFullscreen?.().catch(() => {});
@@ -404,14 +420,14 @@ export function CameraViewer({ initialCamera }: Props) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "ArrowRight" || e.key === "n") handleSwitch();
+      if (e.key === "ArrowRight" || e.key === "n") nextByHand();
       else if (e.key === "t") toggleTv();
       else if (e.key === "f") toggleFullscreen();
-      else if (e.key === "s" && camera?.id) toggleFavourite(camera.id);
+      else if (e.key === "s" && camera?.id) saveCamera(camera.id);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [handleSwitch, toggleTv, toggleFullscreen, toggleFavourite, camera?.id]);
+  }, [nextByHand, toggleTv, toggleFullscreen, saveCamera, camera?.id]);
 
   const eyebrow = phase && now ? headlineFor(phase, now) : null;
   const eyebrowTone = phase?.tone === "golden" ? "text-amber-300" : phase?.tone === "blue" ? "text-violet-300" : "text-white/50";
@@ -461,7 +477,7 @@ export function CameraViewer({ initialCamera }: Props) {
                 {nextElsewhere ? (
                   <>
                     <span className="text-white/25"> · </span>
-                    <button onClick={() => switchTo(nextElsewhere.camera.id)} className="normal-case tracking-normal text-white/60 underline-offset-2 hover:text-amber-200 hover:underline">
+                    <button onClick={() => { feedback.leaving(); switchTo(nextElsewhere.camera.id); }} className="normal-case tracking-normal text-white/60 underline-offset-2 hover:text-amber-200 hover:underline">
                       {nextElsewhere.live
                         ? `Golden hour now in ${nextElsewhere.camera.city ?? nextElsewhere.camera.name} →`
                         : `Next sunset: ${nextElsewhere.camera.city ?? nextElsewhere.camera.name} ${now ? formatRelativeShort(nextElsewhere.event.timeISO, now) : ""} →`}
@@ -497,7 +513,7 @@ export function CameraViewer({ initialCamera }: Props) {
             <MiniMap lat={camera?.lat ?? null} lng={camera?.lng ?? null} name={camera?.name ?? ""} className="h-[5.75rem] w-40 sm:h-28 sm:w-full" />
             <div className="flex flex-1 flex-col gap-2 sm:flex-none">
               <button
-                onClick={handleSwitch}
+                onClick={nextByHand}
                 disabled={loading}
                 className="group w-full border border-white/25 px-4 py-2.5 text-sm text-white transition hover:border-amber-200 hover:text-amber-200 disabled:opacity-50"
               >
@@ -514,7 +530,7 @@ export function CameraViewer({ initialCamera }: Props) {
                   {tv ? "TV on" : "TV mode"}
                 </button>
                 <button
-                  onClick={() => camera?.id && toggleFavourite(camera.id)}
+                  onClick={() => camera?.id && saveCamera(camera.id)}
                   aria-pressed={camera ? isFavourite(camera.id) : false}
                   title="Save this camera (S)"
                   className={`flex-1 border px-2 py-1.5 transition ${camera && isFavourite(camera.id) ? "border-rose-300 text-rose-300" : "border-white/20 text-white/70 hover:border-white/50"}`}
@@ -597,7 +613,7 @@ function Conditions({
         <span aria-hidden className="text-white/25">·</span>
         <span className={accent}>{phaseText}</span>
         <span aria-hidden className="text-white/25">·</span>
-        <span>{sky.title}</span>
+        <span title={meta?.skyIndex !== undefined ? `Sunset sky outlook ${Math.round(meta.skyIndex * 100)}%` : undefined}>{meta?.skyTitle ? `${meta.skyTitle} sky` : sky.title}</span>
       </p>
       {progress !== null ? (
         <div className="relative h-px w-56 max-w-full bg-gradient-to-r from-violet-500/70 via-amber-300 to-violet-500/70" aria-hidden>

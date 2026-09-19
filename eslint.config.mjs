@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
     "worker-configuration.d.ts",
     // Historical one-off scripts, kept for reference and not compiled.
     "scripts/archive/**",
+    // Vendored MapLibre worker, copied verbatim by scripts/copy-maplibre-worker.mjs.
+    "public/vendor/**",
   ]),
 ]);
 

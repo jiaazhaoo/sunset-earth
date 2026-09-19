@@ -157,12 +157,14 @@ async function adoptBestMatch(
         : camera.hostLink;
     await execute(
       `UPDATE camera_ytb
-       SET link = ?, ytb_title = ?, host_link = ?, link_available = 1, last_check = ?
+       SET link = ?, ytb_title = ?, host_link = ?, link_available = 1, last_check = ?,
+           max_height = ?
        WHERE camera_id = ?`,
       newLink,
       match.title,
       newHost,
       nowIso(),
+      playable.maxHeight ?? null,
       camera.id
     );
 

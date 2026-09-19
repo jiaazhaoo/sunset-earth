@@ -43,9 +43,10 @@ export async function recordProbe(
     await execute(
       `UPDATE camera_ytb
        SET link_available = 1, consecutive_failures = 0, unavailable_since = NULL,
-           retired_at = NULL, last_check = ?
+           retired_at = NULL, last_check = ?, max_height = COALESCE(?, max_height)
        WHERE camera_id = ?`,
       checkedAt,
+      verdict.maxHeight ?? null,
       camera.id
     );
     return camera.linkAvailable ? "kept" : "restored";

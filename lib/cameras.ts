@@ -3,7 +3,7 @@ import { query, queryOne, placeholders, toBool, parseJson } from "@/lib/db";
 import type { CameraMetadata } from "@/lib/camera-metadata-types";
 
 const CAMERA_COLUMNS =
-  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available,sunset_delay,sunrise_advance,last_check,camera_metadata,consecutive_failures,unavailable_since,retired_at";
+  "camera_id,link,placename,city,country,latitude,longitude,timezone,info_0,tag,host_link,ytb_title,link_available,sunset_delay,sunrise_advance,last_check,camera_metadata,consecutive_failures,unavailable_since,retired_at,max_height,curated_rating";
 
 export type CameraRow = {
   camera_id: number | string;
@@ -26,6 +26,8 @@ export type CameraRow = {
   consecutive_failures: number | null;
   unavailable_since: string | null;
   retired_at: string | null;
+  max_height?: number | null;
+  curated_rating?: number | null;
   /** SQLite stores JSON as TEXT. */
   camera_metadata: string | null;
 };
@@ -53,6 +55,10 @@ export type CameraRecord = {
   unavailableSince: string | null;
   /** Set once a camera has been down long enough to leave the repair queue. */
   retiredAt: string | null;
+  /** Tallest stream format the probe saw (lib/availability.ts); null until read. */
+  maxHeight?: number | null;
+  /** Stars from /admin/curate, 1..5; null while nobody has judged it. */
+  curatedRating?: number | null;
   metadata: CameraMetadata | null;
 };
 
@@ -122,6 +128,8 @@ export function buildCameraStub(videoId: string, title?: string | null): CameraR
     consecutiveFailures: 0,
     unavailableSince: null,
     retiredAt: null,
+    maxHeight: null,
+    curatedRating: null,
     metadata: null,
   };
 }
@@ -174,6 +182,8 @@ function mapCameraRow(row: CameraRow): CameraRecord {
     consecutiveFailures: toNumber(row.consecutive_failures) ?? 0,
     unavailableSince: row.unavailable_since ?? null,
     retiredAt: row.retired_at ?? null,
+    maxHeight: toNumber(row.max_height ?? null) ?? null,
+    curatedRating: toNumber(row.curated_rating ?? null) ?? null,
     metadata: parseJson<CameraMetadata>(row.camera_metadata),
   };
 }
